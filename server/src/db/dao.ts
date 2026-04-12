@@ -79,7 +79,7 @@ export async function listAgents(filter?: { status?: AgentStatus }): Promise<Age
 export async function updateAgentStatus(id: string, status: AgentStatus): Promise<AgentRow> {
   const { data, error } = await supabase
     .from('agents')
-    .update({ status })
+    .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
@@ -90,7 +90,7 @@ export async function updateAgentStatus(id: string, status: AgentStatus): Promis
 export async function updateAgent(id: string, fields: { name?: string; role?: string }): Promise<AgentRow> {
   const { data, error } = await supabase
     .from('agents')
-    .update(fields)
+    .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
@@ -108,7 +108,7 @@ export async function deleteAgent(id: string): Promise<void> {
 export async function setAgentOnline(agentId: string): Promise<void> {
   const { error } = await supabase
     .from('agent_status')
-    .update({ status: 'online' as OnlineStatus, session_start: new Date().toISOString(), last_heartbeat: new Date().toISOString() })
+    .update({ status: 'online' as OnlineStatus, session_start: new Date().toISOString(), last_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('agent_id', agentId);
   if (error) throw error;
 }
@@ -116,7 +116,7 @@ export async function setAgentOnline(agentId: string): Promise<void> {
 export async function setAgentOffline(agentId: string): Promise<void> {
   const { error } = await supabase
     .from('agent_status')
-    .update({ status: 'offline' as OnlineStatus, active_sessions: 0 })
+    .update({ status: 'offline' as OnlineStatus, active_sessions: 0, updated_at: new Date().toISOString() })
     .eq('agent_id', agentId);
   if (error) throw error;
 }
@@ -124,7 +124,7 @@ export async function setAgentOffline(agentId: string): Promise<void> {
 export async function updateHeartbeat(agentId: string): Promise<void> {
   const { error } = await supabase
     .from('agent_status')
-    .update({ last_heartbeat: new Date().toISOString() })
+    .update({ last_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('agent_id', agentId);
   if (error) throw error;
 }

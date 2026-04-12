@@ -1,8 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createClient } from '@supabase/supabase-js';
+import jwt from 'jsonwebtoken';
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
+const JWT_SECRET = process.env.JWT_SECRET || 'agent-nexus-dev-secret';
+
+export interface JwtPayload {
+  userId: string;
+  email: string;
+}
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
@@ -12,14 +16,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   const token = authHeader.slice(7);
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    res.status(401).json({ error: 'Invalid token' });
-    return;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    (req as any).user = payload;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
   }
+}
 
-  (req as any).user = user;
-  next();
+export function signToken(payload: JwtPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }

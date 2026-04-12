@@ -12,12 +12,16 @@ import { requireAuth } from './api/auth-middleware.js';
 import { agentsRouter } from './api/agents.js';
 import { statusRouter } from './api/status.js';
 import { conventionsRouter } from './api/conventions.js';
+import { authRouter } from './api/auth.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// REST API
+// Auth (no auth required)
+app.use('/api/auth', authRouter);
+
+// REST API (auth required)
 app.use('/api/agents', requireAuth, agentsRouter);
 app.use('/api/status', requireAuth, statusRouter);
 app.use('/api/conventions', requireAuth, conventionsRouter);

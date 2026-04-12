@@ -1,3 +1,16 @@
+-- Users table (OAuth only, no passwords)
+CREATE TABLE users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider      TEXT NOT NULL,        -- "google" | "microsoft"
+  provider_id   TEXT NOT NULL,        -- OAuth sub (third-party unique ID)
+  email         TEXT,
+  name          TEXT,
+  avatar_url    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(provider, provider_id)
+);
+
 -- Agents table
 CREATE TABLE agents (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -57,23 +70,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_create_agent_status
   AFTER INSERT ON agents
   FOR EACH ROW EXECUTE FUNCTION create_agent_status();
-
--- Auto-update updated_at on agents
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_agents_updated_at
-  BEFORE UPDATE ON agents
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER trg_agent_status_updated_at
-  BEFORE UPDATE ON agent_status
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- RLS: enable on all tables
 ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
