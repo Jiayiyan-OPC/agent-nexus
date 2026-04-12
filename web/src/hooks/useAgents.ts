@@ -19,7 +19,7 @@ export function useAgents() {
     if (!error && data) {
       setAgents(data.map((a: any) => ({
         ...a,
-        online_status: a.agent_status?.[0] ?? null,
+        online_status: Array.isArray(a.agent_status) ? a.agent_status[0] ?? null : a.agent_status ?? null,
         agent_status: undefined,
       })));
     }
