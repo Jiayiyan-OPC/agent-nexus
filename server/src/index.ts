@@ -48,7 +48,7 @@ watchConventions((event) => {
   }
 });
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const PORT = parseInt(process.env.PORT ?? '9000', 10);
 server.listen(PORT, () => {
   console.log(`Agent Nexus server running on port ${PORT}`);
 });

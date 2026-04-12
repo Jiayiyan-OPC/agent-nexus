@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000';
 const TOKEN_KEY = 'agent-nexus-token';
 
 async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {

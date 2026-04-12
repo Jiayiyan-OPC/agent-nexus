@@ -8,8 +8,8 @@ export const authRouter: IRouter = Router();
 const COGNITO_DOMAIN = process.env.COGNITO_DOMAIN!;
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID!;
 const COGNITO_CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET!;
-const COGNITO_REDIRECT_URI = process.env.COGNITO_REDIRECT_URI || 'http://localhost:3000/api/auth/callback';
-const WEB_URL = process.env.WEB_URL || 'http://localhost:5173';
+const COGNITO_REDIRECT_URI = process.env.COGNITO_REDIRECT_URI || 'http://localhost:9000/api/auth/callback';
+const WEB_URL = process.env.WEB_URL || 'http://localhost:3000';
 
 // GET /api/auth/login — redirect to Cognito Hosted UI
 authRouter.get('/login', (_req, res) => {
