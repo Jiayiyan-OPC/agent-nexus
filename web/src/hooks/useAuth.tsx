@@ -15,8 +15,7 @@ interface AuthContext {
   user: User | null;
   loading: boolean;
   token: string | null;
-  loginWithGoogle: () => void;
-  loginWithMicrosoft: () => void;
+  login: () => void;
   signOut: () => void;
 }
 
@@ -71,22 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchUser]);
 
-  const loginWithGoogle = () => {
-    window.location.href = `${API_URL}/api/auth/login/google`;
-  };
-
-  const loginWithMicrosoft = () => {
-    window.location.href = `${API_URL}/api/auth/login/microsoft`;
+  const login = () => {
+    window.location.href = `${API_URL}/api/auth/login`;
   };
 
   const signOut = () => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
     setToken(null);
+    window.location.href = `${API_URL}/api/auth/logout`;
   };
 
   return (
-    <AuthCtx.Provider value={{ user, loading, token, loginWithGoogle, loginWithMicrosoft, signOut }}>
+    <AuthCtx.Provider value={{ user, loading, token, login, signOut }}>
       {children}
     </AuthCtx.Provider>
   );
