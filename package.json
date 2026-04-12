@@ -1,0 +1,14 @@
+{
+  "name": "agent-nexus",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter @agent-nexus/server dev",
+    "dev:web": "pnpm --filter @agent-nexus/web dev",
+    "dev": "pnpm run --parallel dev:server dev:web",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

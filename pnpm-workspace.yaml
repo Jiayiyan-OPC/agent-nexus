@@ -1,0 +1,4 @@
+packages:
+  - protocol/typescript
+  - server
+  - web
