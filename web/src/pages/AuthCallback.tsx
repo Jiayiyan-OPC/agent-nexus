@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
+import { useAuth } from '../hooks/useAuth';
 
 export default function AuthCallback() {
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // useAuth in AuthProvider handles the token from URL params
-    // Just redirect to dashboard
-    navigate('/', { replace: true });
-  }, [navigate]);
+    if (!loading) {
+      navigate(user ? '/' : '/login', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   return (
     <div className="flex h-screen items-center justify-center">
