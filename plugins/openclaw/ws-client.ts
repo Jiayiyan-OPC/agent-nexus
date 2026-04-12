@@ -47,7 +47,9 @@ export class NexusWsClient {
     this.ws.on('message', (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString()) as WsMessage;
-        this.opts.onMessage(msg);
+        Promise.resolve(this.opts.onMessage(msg)).catch((err) => {
+          this.opts.logger.error(`[nexus] Message handler error: ${err}`);
+        });
       } catch {
         // ignore malformed messages
       }

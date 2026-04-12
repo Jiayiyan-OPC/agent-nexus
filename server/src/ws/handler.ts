@@ -18,77 +18,86 @@ export function handleConnection(ws: WebSocket): void {
   }, AUTH_TIMEOUT_MS);
 
   ws.on('message', async (raw: Buffer) => {
-    let msg: AgentToServer;
     try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      send(ws, { type: 'error', payload: { reason: 'Invalid JSON' }, ts: '' });
-      return;
-    }
+      let msg: AgentToServer;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        send(ws, { type: 'error', payload: { reason: 'Invalid JSON' }, ts: '' });
+        return;
+      }
 
-    const conn = getConnectionBySocket(ws);
+      const conn = getConnectionBySocket(ws);
 
-    // Unauthenticated
-    if (!conn) {
-      if (msg.type === 'register') {
-        await handleRegister(ws, msg.payload);
-        authenticated = true;
-        clearTimeout(authTimer);
-      } else if (msg.type === 'auth') {
-        const ok = await handleAuth(ws, msg.payload);
-        if (ok) {
+      // Unauthenticated
+      if (!conn) {
+        if (msg.type === 'register') {
+          await handleRegister(ws, msg.payload);
           authenticated = true;
           clearTimeout(authTimer);
+        } else if (msg.type === 'auth') {
+          const ok = await handleAuth(ws, msg.payload);
+          if (ok) {
+            authenticated = true;
+            clearTimeout(authTimer);
+          }
+        } else {
+          send(ws, { type: 'error', payload: { reason: 'Not authenticated' }, ts: '' });
         }
-      } else {
-        send(ws, { type: 'error', payload: { reason: 'Not authenticated' }, ts: '' });
+        return;
       }
-      return;
-    }
 
-    // Pending: only heartbeat
-    if (conn.state === 'pending_approval') {
-      if (msg.type === 'heartbeat') {
-        conn.lastHeartbeat = Date.now();
-        send(ws, { type: 'heartbeat.ack', payload: {}, ts: '' });
+      // Pending: only heartbeat
+      if (conn.state === 'pending_approval') {
+        if (msg.type === 'heartbeat') {
+          conn.lastHeartbeat = Date.now();
+          send(ws, { type: 'heartbeat.ack', payload: {}, ts: '' });
+        }
+        return;
       }
-      return;
-    }
 
-    // Active: all operations
-    switch (msg.type) {
-      case 'heartbeat':
-        conn.lastHeartbeat = Date.now();
-        await dao.updateHeartbeat(conn.agentId);
-        send(ws, { type: 'heartbeat.ack', payload: {}, ts: '' });
-        break;
-      case 'session.start':
-        await dao.createSession({
-          id: msg.payload.sessionId,
-          agentId: conn.agentId,
-          taskName: msg.payload.taskName,
-          tokenLimit: msg.payload.tokenLimit,
-        });
-        break;
-      case 'session.update':
-        await dao.updateSession(msg.payload.sessionId, {
-          tokenUsed: msg.payload.tokenUsed,
-          taskName: msg.payload.taskName,
-        });
-        break;
-      case 'session.end':
-        await dao.endSession(msg.payload.sessionId, msg.payload.status, msg.payload.tokenUsed);
-        break;
-      default:
-        send(ws, { type: 'error', payload: { reason: `Unknown message type: ${(msg as any).type}` }, ts: '' });
+      // Active: all operations
+      switch (msg.type) {
+        case 'heartbeat':
+          conn.lastHeartbeat = Date.now();
+          await dao.updateHeartbeat(conn.agentId);
+          send(ws, { type: 'heartbeat.ack', payload: {}, ts: '' });
+          break;
+        case 'session.start':
+          await dao.createSession({
+            id: msg.payload.sessionId,
+            agentId: conn.agentId,
+            taskName: msg.payload.taskName,
+            tokenLimit: msg.payload.tokenLimit,
+          });
+          break;
+        case 'session.update':
+          await dao.updateSession(msg.payload.sessionId, {
+            tokenUsed: msg.payload.tokenUsed,
+            taskName: msg.payload.taskName,
+          });
+          break;
+        case 'session.end':
+          await dao.endSession(msg.payload.sessionId, msg.payload.status, msg.payload.tokenUsed);
+          break;
+        default:
+          send(ws, { type: 'error', payload: { reason: `Unknown message type: ${(msg as any).type}` }, ts: '' });
+      }
+    } catch (err) {
+      console.error('[ws] Message handler error:', err);
+      send(ws, { type: 'error', payload: { reason: 'Internal server error' }, ts: '' });
     }
   });
 
   ws.on('close', async () => {
-    clearTimeout(authTimer);
-    const conn = removeConnection(ws);
-    if (conn && conn.state === 'active') {
-      await dao.setAgentOffline(conn.agentId);
+    try {
+      clearTimeout(authTimer);
+      const conn = removeConnection(ws);
+      if (conn && conn.state === 'active') {
+        await dao.setAgentOffline(conn.agentId);
+      }
+    } catch (err) {
+      console.error('[ws] Close handler error:', err);
     }
   });
 }
