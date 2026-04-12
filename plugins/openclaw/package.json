@@ -3,7 +3,16 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "scripts": {
+    "start": "tsx standalone.ts",
+    "setup": "tsx standalone.ts nexus setup",
+    "status": "tsx standalone.ts nexus status"
+  },
   "dependencies": {
+    "commander": "^13.1.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
   }
 }

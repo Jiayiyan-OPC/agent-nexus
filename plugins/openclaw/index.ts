@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hostname, platform, release } from 'node:os';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
 import { writeConventions, writeConventionUpdate } from './conventions.js';
 
@@ -99,8 +100,8 @@ export default function (api: any) {
         type: 'auth',
         payload: {
           apiKey: state.apiKey,
-          hostname: require('os').hostname(),
-          os: `${require('os').platform()} ${require('os').release()}`,
+          hostname: hostname(),
+          os: `${platform()} ${release()}`,
         },
       });
     } else {
@@ -111,8 +112,8 @@ export default function (api: any) {
           name: config.agentName,
           agentType: 'openclaw',
           role: config.role,
-          hostname: require('os').hostname(),
-          os: `${require('os').platform()} ${require('os').release()}`,
+          hostname: hostname(),
+          os: `${platform()} ${release()}`,
         },
       });
     }
@@ -207,8 +208,8 @@ export default function (api: any) {
                 name: config.agentName,
                 agentType: 'openclaw',
                 role: config.role,
-                hostname: require('os').hostname(),
-                os: `${require('os').platform()} ${require('os').release()}`,
+                hostname: hostname(),
+                os: `${platform()} ${release()}`,
               },
             });
           },

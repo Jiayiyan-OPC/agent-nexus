@@ -76,7 +76,16 @@ ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_sessions ENABLE ROW LEVEL SECURITY;
 
--- RLS policies: authenticated users (admin) get full access
+-- RLS policies: anon can read, authenticated gets full access
+CREATE POLICY "Anon read access to agents"
+  ON agents FOR SELECT TO anon USING (true);
+
+CREATE POLICY "Anon read access to agent_status"
+  ON agent_status FOR SELECT TO anon USING (true);
+
+CREATE POLICY "Anon read access to agent_sessions"
+  ON agent_sessions FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Authenticated users have full access to agents"
   ON agents FOR ALL TO authenticated USING (true) WITH CHECK (true);
 

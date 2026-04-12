@@ -2,3 +2,4 @@ packages:
   - protocol/typescript
   - server
   - web
+  - plugins/openclaw
