@@ -1,0 +1,58 @@
+import { supabase } from './supabase';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  return fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+}
+
+export async function fetchAgents(status?: string) {
+  const query = status ? `?status=${status}` : '';
+  const res = await authFetch(`/api/agents${query}`);
+  return res.json();
+}
+
+export async function fetchAgent(id: string) {
+  const res = await authFetch(`/api/agents/${id}`);
+  return res.json();
+}
+
+export async function approveAgent(id: string) {
+  const res = await authFetch(`/api/agents/${id}/approve`, { method: 'POST' });
+  return res.json();
+}
+
+export async function rejectAgent(id: string, reason?: string) {
+  const res = await authFetch(`/api/agents/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+  return res.json();
+}
+
+export async function updateAgent(id: string, fields: { name?: string; role?: string }) {
+  const res = await authFetch(`/api/agents/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  });
+  return res.json();
+}
+
+export async function revokeAgent(id: string) {
+  const res = await authFetch(`/api/agents/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+export async function fetchSessions(agentId: string, limit = 20, offset = 0) {
+  const res = await authFetch(`/api/status/sessions/${agentId}?limit=${limit}&offset=${offset}`);
+  return res.json();
+}
