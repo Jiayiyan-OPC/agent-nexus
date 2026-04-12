@@ -66,6 +66,19 @@ export async function findPendingAgent(name: string, agentType: string, role: st
   return data as AgentRow;
 }
 
+export async function findAgentByIdentity(name: string, agentType: string, role: string): Promise<AgentRow | null> {
+  const { data, error } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('name', name)
+    .eq('agent_type', agentType)
+    .eq('role', role)
+    .single();
+  if (error && error.code === 'PGRST116') return null;
+  if (error) throw error;
+  return data as AgentRow;
+}
+
 export async function listAgents(filter?: { status?: AgentStatus }): Promise<AgentRow[]> {
   let query = supabase.from('agents').select('*');
   if (filter?.status) {

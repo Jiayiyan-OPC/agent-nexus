@@ -1,0 +1,39 @@
+{
+  "id": "agent-nexus",
+  "name": "Agent Nexus",
+  "description": "Connect to Agent Nexus for identity management, convention distribution, and status tracking",
+  "version": "0.0.1",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "serverUrl": {
+        "type": "string"
+      },
+      "agentName": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string",
+        "enum": ["arch", "pmo", "dev", "qa", "devops"]
+      }
+    },
+    "required": ["serverUrl", "agentName", "role"]
+  },
+  "uiHints": {
+    "serverUrl": {
+      "label": "Server URL",
+      "placeholder": "ws://localhost:9000",
+      "help": "Agent Nexus WebSocket server address"
+    },
+    "agentName": {
+      "label": "Agent Name",
+      "placeholder": "my-dev-agent",
+      "help": "Unique name for this agent"
+    },
+    "role": {
+      "label": "Role",
+      "help": "Agent role in the team"
+    }
+  }
+}

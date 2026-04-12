@@ -94,17 +94,41 @@ export function handleConnection(ws: WebSocket): void {
 }
 
 async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<void> {
-  const existing = await dao.findPendingAgent(payload.name, payload.agentType, payload.role);
+  // Check if agent already exists (any status)
+  const existing = await dao.findAgentByIdentity(payload.name, payload.agentType, payload.role);
+
   if (existing) {
-    addConnection(ws, { agentId: existing.id, role: existing.role, state: 'pending_approval' });
-    send(ws, {
-      type: 'register.pending',
-      payload: { agentId: existing.id, message: 'Awaiting admin approval (reconnected to existing registration)' },
-      ts: '',
-    });
+    // Already approved — treat as auth, return approved with api_key
+    if (existing.status === 'active') {
+      addConnection(ws, { agentId: existing.id, role: existing.role, state: 'active' });
+      await dao.setAgentOnline(existing.id);
+      const conventions = await getConventionsForRole(existing.role);
+      send(ws, {
+        type: 'register.approved',
+        payload: { apiKey: existing.api_key, agentId: existing.id, name: existing.name, role: existing.role, conventions },
+        ts: '',
+      });
+      return;
+    }
+
+    // Still pending �� reconnect to existing registration
+    if (existing.status === 'pending_approval') {
+      addConnection(ws, { agentId: existing.id, role: existing.role, state: 'pending_approval' });
+      send(ws, {
+        type: 'register.pending',
+        payload: { agentId: existing.id, message: 'Awaiting admin approval (reconnected)' },
+        ts: '',
+      });
+      return;
+    }
+
+    // Rejected or revoked — deny
+    send(ws, { type: 'register.rejected', payload: { reason: `Agent was ${existing.status}` }, ts: '' });
+    ws.close();
     return;
   }
 
+  // New agent — create and pend
   const agent = await dao.createAgent({
     name: payload.name,
     agentType: payload.agentType,
