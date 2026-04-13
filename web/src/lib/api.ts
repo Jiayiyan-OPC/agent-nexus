@@ -54,3 +54,36 @@ export async function fetchSessions(agentId: string, limit = 20, offset = 0) {
   const res = await authFetch(`/api/status/sessions/${agentId}?limit=${limit}&offset=${offset}`);
   return res.json();
 }
+
+// --- Skills ---
+
+export async function fetchSkills() {
+  const res = await authFetch('/api/skills');
+  return res.json();
+}
+
+export async function fetchSkill(id: string) {
+  const res = await authFetch(`/api/skills/${id}`);
+  return res.json();
+}
+
+export async function createSkill(data: { scope: string; title: string; description: string; content: string }) {
+  const res = await authFetch('/api/skills', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateSkill(id: string, data: { scope?: string; title?: string; description?: string; content?: string }) {
+  const res = await authFetch(`/api/skills/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deleteSkill(id: string) {
+  const res = await authFetch(`/api/skills/${id}`, { method: 'DELETE' });
+  return res.json();
+}
