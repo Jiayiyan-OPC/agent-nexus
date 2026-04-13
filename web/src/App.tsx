@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import PendingApproval from './pages/PendingApproval';
 import AgentDetail from './pages/AgentDetail';
 import AuthCallback from './pages/AuthCallback';
+import Skills from './pages/Skills';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/pending" element={<ProtectedRoute><PendingApproval /></ProtectedRoute>} />
           <Route path="/agents/:id" element={<ProtectedRoute><AgentDetail /></ProtectedRoute>} />
+          <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -9,6 +9,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { path: '/', label: 'Dashboard' },
     { path: '/pending', label: 'Pending Approval' },
+    { path: '/skills', label: 'Skills' },
   ];
 
   return (
