@@ -5,13 +5,22 @@ import type { SkillRow } from '@agent-nexus/protocol';
 
 export const skillsRouter: IRouter = Router();
 
+function parseFrontmatter(content: string): { name?: string; description?: string } {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!match) return {};
+  const fm = match[1];
+  const name = fm.match(/name:\s*(.+)/)?.[1]?.trim();
+  const description = fm.match(/description:\s*(.+)/)?.[1]?.trim();
+  return { name, description };
+}
+
 // GET /api/skills — list all skills
 skillsRouter.get('/', async (_req, res) => {
   const { data, error } = await supabase
     .from('skills')
     .select('*')
     .order('scope')
-    .order('created_at');
+    .order('title');
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data as SkillRow[]);
 });
@@ -27,7 +36,7 @@ skillsRouter.get('/scope/:scope', async (req, res) => {
     .from('skills')
     .select('*')
     .eq('scope', scope)
-    .order('created_at');
+    .order('title');
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data as SkillRow[]);
 });
@@ -54,9 +63,14 @@ skillsRouter.post('/', async (req, res) => {
     res.status(400).json({ error: `Invalid scope: ${scope}` });
     return;
   }
+  const { name, description } = parseFrontmatter(content);
+  if (!name) {
+    res.status(400).json({ error: 'Invalid SKILL.md: frontmatter must contain "name" field' });
+    return;
+  }
   const { data, error } = await supabase
     .from('skills')
-    .insert({ scope, content })
+    .insert({ scope, title: name, description: description ?? '', content })
     .select()
     .single();
   if (error) { res.status(500).json({ error: error.message }); return; }
@@ -74,7 +88,16 @@ skillsRouter.put('/:id', async (req, res) => {
     }
     update.scope = scope;
   }
-  if (content !== undefined) update.content = content;
+  if (content !== undefined) {
+    const { name, description } = parseFrontmatter(content);
+    if (!name) {
+      res.status(400).json({ error: 'Invalid SKILL.md: frontmatter must contain "name" field' });
+      return;
+    }
+    update.title = name;
+    update.description = description ?? '';
+    update.content = content;
+  }
 
   const { data, error } = await supabase
     .from('skills')

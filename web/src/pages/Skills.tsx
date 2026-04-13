@@ -18,15 +18,6 @@ const scopeColors: Record<string, string> = {
   devops: 'bg-orange-100 text-orange-800',
 };
 
-function parseFrontmatter(content: string): { name: string; description: string } {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return { name: 'unnamed', description: '' };
-  const fm = match[1];
-  const name = fm.match(/name:\s*(.+)/)?.[1]?.trim() ?? 'unnamed';
-  const desc = fm.match(/description:\s*(.+)/)?.[1]?.trim() ?? '';
-  return { name, description: desc };
-}
-
 const SKILL_TEMPLATE = `---
 name: my-skill
 description: One-line description for skill discovery
@@ -128,36 +119,33 @@ export default function Skills() {
             <p className="text-gray-500">No skills</p>
           ) : (
             <div className="space-y-2">
-              {filtered.map(s => {
-                const { name, description } = parseFrontmatter(s.content);
-                return (
-                  <Card
-                    key={s.id}
-                    className={`cursor-pointer transition-shadow hover:shadow-md ${editing?.id === s.id ? 'ring-2 ring-primary' : ''}`}
-                    onClick={() => startEdit(s)}
-                  >
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary" className={scopeColors[s.scope] ?? ''}>
-                          {s.scope}
-                        </Badge>
-                        <div>
-                          <span className="font-medium">{name}</span>
-                          <p className="text-xs text-gray-500">{description}</p>
-                        </div>
+              {filtered.map(s => (
+                <Card
+                  key={s.id}
+                  className={`cursor-pointer transition-shadow hover:shadow-md ${editing?.id === s.id ? 'ring-2 ring-primary' : ''}`}
+                  onClick={() => startEdit(s)}
+                >
+                  <CardContent className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className={scopeColors[s.scope] ?? ''}>
+                        {s.scope}
+                      </Badge>
+                      <div>
+                        <span className="font-medium">{s.title}</span>
+                        <p className="text-xs text-gray-500">{s.description}</p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
-                      >
-                        Delete
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-500 hover:text-red-700"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
+                    >
+                      Delete
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </div>
