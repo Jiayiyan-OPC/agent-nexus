@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import type { AgentToServer, RegisterPayload, AuthPayload } from '@agent-nexus/protocol';
 import { send } from './send.js';
 import { addConnection, removeConnection, getConnectionBySocket, getConnectionByAgentId } from './state.js';
-import { getConventionsForRole } from '../conventions/reader.js';
+import { getSkillsForRole } from '../skills/reader.js';
 import * as dao from '../db/dao.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
@@ -111,10 +111,10 @@ async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<
     if (existing.status === 'active') {
       addConnection(ws, { agentId: existing.id, role: existing.role, state: 'active' });
       await dao.setAgentOnline(existing.id);
-      const conventions = await getConventionsForRole(existing.role);
+      const skills = await getSkillsForRole(existing.role);
       send(ws, {
         type: 'register.approved',
-        payload: { apiKey: existing.api_key, agentId: existing.id, name: existing.name, role: existing.role, conventions },
+        payload: { apiKey: existing.api_key, agentId: existing.id, name: existing.name, role: existing.role, skills },
         ts: '',
       });
       return;
@@ -179,10 +179,10 @@ async function handleAuth(ws: WebSocket, payload: AuthPayload): Promise<boolean>
   addConnection(ws, { agentId: agent.id, role: agent.role, state: 'active' });
   await dao.setAgentOnline(agent.id);
 
-  const conventions = await getConventionsForRole(agent.role);
+  const skills = await getSkillsForRole(agent.role);
   send(ws, {
     type: 'auth.ok',
-    payload: { agentId: agent.id, name: agent.name, role: agent.role, conventions },
+    payload: { agentId: agent.id, name: agent.name, role: agent.role, skills },
     ts: '',
   });
   return true;
@@ -199,10 +199,10 @@ export async function notifyAgentApproved(agentId: string): Promise<void> {
   agentConn.state = 'active';
   await dao.setAgentOnline(agentId);
 
-  const conventions = await getConventionsForRole(agent.role);
+  const skills = await getSkillsForRole(agent.role);
   send(agentConn.ws, {
     type: 'register.approved',
-    payload: { apiKey: agent.api_key, agentId: agent.id, name: agent.name, role: agent.role, conventions },
+    payload: { apiKey: agent.api_key, agentId: agent.id, name: agent.name, role: agent.role, skills },
     ts: '',
   });
 }

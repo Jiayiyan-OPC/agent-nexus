@@ -5,13 +5,13 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
 import { startHeartbeatMonitor } from './ws/heartbeat.js';
-import { watchConventions } from './conventions/watcher.js';
+import { watchSkills } from './skills/watcher.js';
 import { getAllActiveConnections, getOnlineAgentsByRole } from './ws/state.js';
 import { send } from './ws/send.js';
 import { requireAuth } from './api/auth-middleware.js';
 import { agentsRouter } from './api/agents.js';
 import { statusRouter } from './api/status.js';
-import { conventionsRouter } from './api/conventions.js';
+import { skillsRouter } from './api/skills.js';
 import { authRouter } from './api/auth.js';
 
 const app = express();
@@ -24,7 +24,7 @@ app.use('/api/auth', authRouter);
 // REST API (auth required)
 app.use('/api/agents', requireAuth, agentsRouter);
 app.use('/api/status', requireAuth, statusRouter);
-app.use('/api/conventions', requireAuth, conventionsRouter);
+app.use('/api/skills', requireAuth, skillsRouter);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -36,14 +36,14 @@ wss.on('connection', handleConnection);
 
 startHeartbeatMonitor();
 
-watchConventions((event) => {
+watchSkills((event) => {
   if (event.scope === 'global') {
     for (const conn of getAllActiveConnections()) {
-      send(conn.ws, { type: 'conventions.update', payload: { scope: 'global', files: event.files }, ts: '' });
+      send(conn.ws, { type: 'skills.update', payload: { scope: 'global', files: event.files }, ts: '' });
     }
   } else if (event.role) {
     for (const conn of getOnlineAgentsByRole(event.role)) {
-      send(conn.ws, { type: 'conventions.update', payload: { scope: 'role', files: event.files }, ts: '' });
+      send(conn.ws, { type: 'skills.update', payload: { scope: 'role', files: event.files }, ts: '' });
     }
   }
 });
