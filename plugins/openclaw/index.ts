@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hostname, platform, release } from 'node:os';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
-import { writeConventions, writeConventionUpdate } from './conventions.js';
+import { writeSkills, writeSkillUpdate } from './skills.js';
 
 type PluginConfig = {
   serverUrl: string;
@@ -24,7 +24,7 @@ export default function (api: any) {
 
   const dataDir = api.resolvePath('~/.clawdbot/extensions/agent-nexus');
   const stateFile = join(dataDir, 'state.json');
-  const conventionsDir = join(dataDir, 'conventions');
+  const skillsDir = api.resolvePath('~/.openclaw/workspace/skills');
 
   let state: PersistedState = {};
   let client: NexusWsClient;
@@ -51,7 +51,7 @@ export default function (api: any) {
     switch (msg.type) {
       case 'auth.ok':
         api.logger.info(`[nexus] Authenticated as ${msg.payload.name} (${msg.payload.role})`);
-        writeConventions(conventionsDir, msg.payload.conventions).catch(() => {});
+        writeSkills(skillsDir, config.role, msg.payload.skills).catch(() => {});
         break;
 
       case 'auth.fail':
@@ -72,16 +72,16 @@ export default function (api: any) {
         state.agentId = msg.payload.agentId;
         saveState().catch(() => {});
         api.logger.info(`[nexus] Approved! Connected as ${msg.payload.name} (${msg.payload.role})`);
-        writeConventions(conventionsDir, msg.payload.conventions).catch(() => {});
+        writeSkills(skillsDir, config.role, msg.payload.skills).catch(() => {});
         break;
 
       case 'register.rejected':
         api.logger.warn(`[nexus] Registration rejected: ${msg.payload.reason}`);
         break;
 
-      case 'conventions.update':
-        writeConventionUpdate(conventionsDir, msg.payload.scope, msg.payload.files).catch(() => {});
-        api.logger.info(`[nexus] Conventions updated (${msg.payload.scope})`);
+      case 'skills.update':
+        writeSkillUpdate(skillsDir, msg.payload.scope, config.role, msg.payload.files).catch(() => {});
+        api.logger.info(`[nexus] Skills updated (${msg.payload.scope})`);
         break;
 
       case 'heartbeat.ack':
