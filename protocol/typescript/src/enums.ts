@@ -12,3 +12,6 @@ export type OnlineStatus = typeof ONLINE_STATUSES[number];
 
 export const SESSION_STATUSES = ['active', 'completed', 'error'] as const;
 export type SessionStatus = typeof SESSION_STATUSES[number];
+
+export const SKILL_SCOPES = ['global', ...ROLES] as const;
+export type SkillScope = typeof SKILL_SCOPES[number];

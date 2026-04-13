@@ -53,13 +53,13 @@ export type AgentToServer =
 
 // --- Server -> Agent ---
 
-export type ConventionFiles = { filename: string; content: string }[];
+export type SkillFiles = { filename: string; description: string; content: string }[];
 
 export type AuthOkPayload = {
   agentId: string;
   name: string;
   role: Role;
-  conventions: { global: ConventionFiles; role: ConventionFiles };
+  skills: { global: SkillFiles; role: SkillFiles };
 };
 
 export type AuthFailPayload = { reason: string };
@@ -71,14 +71,14 @@ export type RegisterApprovedPayload = {
   agentId: string;
   name: string;
   role: Role;
-  conventions: { global: ConventionFiles; role: ConventionFiles };
+  skills: { global: SkillFiles; role: SkillFiles };
 };
 
 export type RegisterRejectedPayload = { reason: string };
 
-export type ConventionsUpdatePayload = {
+export type SkillsUpdatePayload = {
   scope: 'global' | 'role';
-  files: ConventionFiles;
+  files: SkillFiles;
 };
 
 export type ErrorPayload = { reason: string };
@@ -89,6 +89,6 @@ export type ServerToAgent =
   | WsMessage<'register.pending', RegisterPendingPayload>
   | WsMessage<'register.approved', RegisterApprovedPayload>
   | WsMessage<'register.rejected', RegisterRejectedPayload>
-  | WsMessage<'conventions.update', ConventionsUpdatePayload>
+  | WsMessage<'skills.update', SkillsUpdatePayload>
   | WsMessage<'heartbeat.ack', Record<string, never>>
   | WsMessage<'error', ErrorPayload>;

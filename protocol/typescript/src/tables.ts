@@ -1,4 +1,4 @@
-import type { AgentType, Role, AgentStatus, OnlineStatus, SessionStatus } from './enums.js';
+import type { AgentType, Role, AgentStatus, OnlineStatus, SessionStatus, SkillScope } from './enums.js';
 
 export interface AgentRow {
   id: string;
@@ -36,4 +36,14 @@ export interface AgentSessionRow {
   started_at: string;
   ended_at: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface SkillRow {
+  id: string;
+  scope: SkillScope;
+  title: string;
+  description: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }
