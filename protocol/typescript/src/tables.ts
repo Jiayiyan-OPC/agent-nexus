@@ -41,8 +41,6 @@ export interface AgentSessionRow {
 export interface SkillRow {
   id: string;
   scope: SkillScope;
-  title: string;
-  description: string;
   content: string;
   created_at: string;
   updated_at: string;

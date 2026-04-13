@@ -53,7 +53,7 @@ export type AgentToServer =
 
 // --- Server -> Agent ---
 
-export type SkillFiles = { filename: string; description: string; content: string }[];
+export type SkillFiles = { name: string; content: string }[];
 
 export type AuthOkPayload = {
   agentId: string;

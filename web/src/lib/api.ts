@@ -67,7 +67,7 @@ export async function fetchSkill(id: string) {
   return res.json();
 }
 
-export async function createSkill(data: { scope: string; title: string; description: string; content: string }) {
+export async function createSkill(data: { scope: string; content: string }) {
   const res = await authFetch('/api/skills', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -75,7 +75,7 @@ export async function createSkill(data: { scope: string; title: string; descript
   return res.json();
 }
 
-export async function updateSkill(id: string, data: { scope?: string; title?: string; description?: string; content?: string }) {
+export async function updateSkill(id: string, data: { scope?: string; content?: string }) {
   const res = await authFetch(`/api/skills/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),

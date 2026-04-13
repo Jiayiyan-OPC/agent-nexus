@@ -5,13 +5,13 @@ import type { SkillRow } from '@agent-nexus/protocol';
 
 export const skillsRouter: IRouter = Router();
 
-// GET /api/skills — list all skills grouped by scope
+// GET /api/skills — list all skills
 skillsRouter.get('/', async (_req, res) => {
   const { data, error } = await supabase
     .from('skills')
     .select('*')
     .order('scope')
-    .order('title');
+    .order('created_at');
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data as SkillRow[]);
 });
@@ -27,7 +27,7 @@ skillsRouter.get('/scope/:scope', async (req, res) => {
     .from('skills')
     .select('*')
     .eq('scope', scope)
-    .order('title');
+    .order('created_at');
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data as SkillRow[]);
 });
@@ -45,9 +45,9 @@ skillsRouter.get('/:id', async (req, res) => {
 
 // POST /api/skills — create a skill
 skillsRouter.post('/', async (req, res) => {
-  const { scope, title, description, content } = req.body;
-  if (!scope || !title || !description || content === undefined) {
-    res.status(400).json({ error: 'scope, title, description, and content are required' });
+  const { scope, content } = req.body;
+  if (!scope || !content) {
+    res.status(400).json({ error: 'scope and content are required' });
     return;
   }
   if (!SKILL_SCOPES.includes(scope as any)) {
@@ -56,7 +56,7 @@ skillsRouter.post('/', async (req, res) => {
   }
   const { data, error } = await supabase
     .from('skills')
-    .insert({ scope, title, description, content })
+    .insert({ scope, content })
     .select()
     .single();
   if (error) { res.status(500).json({ error: error.message }); return; }
@@ -65,7 +65,7 @@ skillsRouter.post('/', async (req, res) => {
 
 // PUT /api/skills/:id — update a skill
 skillsRouter.put('/:id', async (req, res) => {
-  const { scope, title, description, content } = req.body;
+  const { scope, content } = req.body;
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (scope !== undefined) {
     if (!SKILL_SCOPES.includes(scope as any)) {
@@ -74,8 +74,6 @@ skillsRouter.put('/:id', async (req, res) => {
     }
     update.scope = scope;
   }
-  if (title !== undefined) update.title = title;
-  if (description !== undefined) update.description = description;
   if (content !== undefined) update.content = content;
 
   const { data, error } = await supabase
