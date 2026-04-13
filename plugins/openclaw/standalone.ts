@@ -6,7 +6,7 @@
  * Simulates the OpenClaw plugin API so the plugin can run without the gateway.
  */
 import { Command } from 'commander';
-import plugin from './index.js';
+import pluginDef from './index.js';
 
 const program = new Command('agent-nexus-plugin');
 
@@ -44,7 +44,7 @@ const api = {
 };
 
 // Run the plugin
-plugin(api);
+pluginDef.register(api);
 
 // If CLI args provided (e.g. "nexus setup"), run commander
 if (process.argv.length > 2) {

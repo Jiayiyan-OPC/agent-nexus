@@ -1,7 +1,7 @@
 {
   "id": "agent-nexus",
   "name": "Agent Nexus",
-  "description": "Connect to Agent Nexus for identity management, convention distribution, and status tracking",
+  "description": "Connect to Agent Nexus for identity management, skill distribution, and session tracking",
   "version": "0.0.1",
   "configSchema": {
     "type": "object",

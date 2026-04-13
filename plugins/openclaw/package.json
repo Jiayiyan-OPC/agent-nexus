@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
   "scripts": {
     "start": "tsx standalone.ts",
     "setup": "tsx standalone.ts nexus setup",
