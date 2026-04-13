@@ -5,13 +5,33 @@ import type { SkillRow } from '@agent-nexus/protocol';
 
 export const skillsRouter: IRouter = Router();
 
+function parseYamlValue(key: string, fm: string): string | undefined {
+  const re = new RegExp(`${key}:\\s*(.*)$`, 'm');
+  const match = fm.match(re);
+  if (!match) return undefined;
+  const inline = match[1].trim();
+  // Single-line value
+  if (inline && inline !== '>' && inline !== '|') return inline;
+  // Folded (>) or literal (|) block: collect indented continuation lines
+  const lines = fm.split('\n');
+  const idx = lines.findIndex(l => l.match(new RegExp(`^${key}:`)));
+  if (idx === -1) return undefined;
+  const parts: string[] = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (/^\s+/.test(lines[i])) {
+      parts.push(lines[i].trim());
+    } else {
+      break;
+    }
+  }
+  return parts.join(' ') || undefined;
+}
+
 function parseFrontmatter(content: string): { name?: string; description?: string } {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return {};
   const fm = match[1];
-  const name = fm.match(/name:\s*(.+)/)?.[1]?.trim();
-  const description = fm.match(/description:\s*(.+)/)?.[1]?.trim();
-  return { name, description };
+  return { name: parseYamlValue('name', fm), description: parseYamlValue('description', fm) };
 }
 
 // GET /api/skills — list all skills
