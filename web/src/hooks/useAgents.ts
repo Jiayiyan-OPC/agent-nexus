@@ -29,13 +29,22 @@ export function useAgents() {
   useEffect(() => {
     load();
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(load, 5000);
+    };
+
     const agentsSub = supabase
       .channel('agents-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_status' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_status' }, () => debouncedLoad())
       .subscribe();
 
-    return () => { supabase.removeChannel(agentsSub); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(agentsSub);
+    };
   }, [load]);
 
   return { agents, loading, reload: load };
