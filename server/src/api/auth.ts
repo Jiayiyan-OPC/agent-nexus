@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { request as httpsRequest } from 'node:https';
 import { supabase } from '../db/supabase.js';
 import { signToken } from './auth-middleware.js';
 import type { IRouter } from 'express';
@@ -10,6 +11,50 @@ const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID!;
 const COGNITO_CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET!;
 const COGNITO_REDIRECT_URI = process.env.COGNITO_REDIRECT_URI || 'http://localhost:9000/api/auth/callback';
 const WEB_URL = process.env.WEB_URL || 'http://localhost:3000';
+
+// Helper: https POST/GET that forces IPv4 (undici/fetch has IPv6 issues on some hosts)
+function httpsPost(url: string, body: string, headers: Record<string, string>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = httpsRequest({
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      family: 4,
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body).toString() },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(data); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+function httpsGet(url: string, headers: Record<string, string>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = httpsRequest({
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      family: 4,
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(data); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 // GET /api/auth/login — redirect to Cognito Hosted UI
 authRouter.get('/login', (_req, res) => {
@@ -24,38 +69,38 @@ authRouter.get('/login', (_req, res) => {
 
 // GET /api/auth/callback — exchange authorization code for tokens
 authRouter.get('/callback', async (req, res) => {
-  const code = req.query.code as string;
-  if (!code) { res.status(400).json({ error: 'Missing code' }); return; }
+  try {
+    const code = req.query.code as string;
+    if (!code) { res.status(400).json({ error: 'Missing code' }); return; }
 
-  // Exchange code for tokens
-  const basicAuth = Buffer.from(`${COGNITO_CLIENT_ID}:${COGNITO_CLIENT_SECRET}`).toString('base64');
-  const tokenRes = await fetch(`https://${COGNITO_DOMAIN}/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${basicAuth}`,
-    },
-    body: new URLSearchParams({
+    const basicAuth = Buffer.from(`${COGNITO_CLIENT_ID}:${COGNITO_CLIENT_SECRET}`).toString('base64');
+    const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
       redirect_uri: COGNITO_REDIRECT_URI,
-    }),
-  });
-  const tokens = await tokenRes.json() as any;
-  if (!tokens.access_token) {
-    res.status(401).json({ error: 'Failed to exchange code' });
-    return;
+    }).toString();
+
+    const tokens = await httpsPost(`https://${COGNITO_DOMAIN}/oauth2/token`, body, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth}`,
+    });
+
+    if (!tokens.access_token) {
+      console.error('[auth] Token exchange failed:', tokens);
+      res.status(401).json({ error: 'Failed to exchange code' });
+      return;
+    }
+
+    const profile = await httpsGet(`https://${COGNITO_DOMAIN}/oauth2/userInfo`, {
+      Authorization: `Bearer ${tokens.access_token}`,
+    });
+
+    const jwt = await upsertAndSign(profile.sub, profile.email, profile.name ?? profile.email, profile.picture);
+    res.redirect(`${WEB_URL}/auth/callback?token=${jwt}`);
+  } catch (err) {
+    console.error('[auth] Callback error:', err);
+    res.status(500).json({ error: 'Authentication failed' });
   }
-
-  // Fetch user info from Cognito
-  const userRes = await fetch(`https://${COGNITO_DOMAIN}/oauth2/userInfo`, {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-  const profile = await userRes.json() as any;
-
-  // Upsert user and sign JWT
-  const jwt = await upsertAndSign(profile.sub, profile.email, profile.name ?? profile.email, profile.picture);
-  res.redirect(`${WEB_URL}/auth/callback?token=${jwt}`);
 });
 
 // GET /api/auth/logout — redirect to Cognito logout
