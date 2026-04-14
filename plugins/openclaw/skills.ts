@@ -9,7 +9,7 @@ export async function writeSkills(
 ): Promise<void> {
   const all = [...skills.global, ...skills.role];
   for (const skill of all) {
-    const dir = join(baseDir, 'agent-nexus', skill.name);
+    const dir = join(baseDir, `agent-nexus-${skill.name}`);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'SKILL.md'), skill.content, 'utf-8');
   }
@@ -20,7 +20,7 @@ export async function writeSkillUpdate(
   files: SkillFile[],
 ): Promise<void> {
   for (const skill of files) {
-    const dir = join(baseDir, 'agent-nexus', skill.name);
+    const dir = join(baseDir, `agent-nexus-${skill.name}`);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'SKILL.md'), skill.content, 'utf-8');
   }

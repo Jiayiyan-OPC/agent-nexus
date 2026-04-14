@@ -1,4 +1,6 @@
-import WebSocket from 'ws';
+import { Worker } from 'node:worker_threads';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export type WsMessage = {
   type: string;
@@ -7,7 +9,6 @@ export type WsMessage = {
 };
 
 export type WsClientOptions = {
-  serverUrl: string;
   onMessage: (msg: WsMessage) => void;
   onOpen?: () => void;
   onClose?: () => void;
@@ -15,103 +16,70 @@ export type WsClientOptions = {
 };
 
 export class NexusWsClient {
-  private ws: WebSocket | null = null;
+  private worker: Worker | null = null;
   private opts: WsClientOptions;
-  private reconnectAttempt = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private destroyed = false;
+  private _connected = false;
 
   constructor(opts: WsClientOptions) {
     this.opts = opts;
   }
 
-  connect(): void {
-    if (this.destroyed) return;
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+  private ensureWorker(): Worker {
+    if (this.worker) return this.worker;
 
-    try {
-      this.ws = new WebSocket(this.opts.serverUrl);
-    } catch (e) {
-      this.opts.logger.warn(`[nexus] Failed to create WebSocket: ${e}`);
-      this.scheduleReconnect();
-      return;
-    }
+    const workerPath = join(dirname(fileURLToPath(import.meta.url)), 'ws-worker.mjs');
+    this.worker = new Worker(workerPath);
 
-    this.ws.on('open', () => {
-      this.reconnectAttempt = 0;
-      this.startHeartbeat();
-      this.opts.onOpen?.();
-    });
-
-    this.ws.on('message', (raw: Buffer) => {
-      try {
-        const msg = JSON.parse(raw.toString()) as WsMessage;
-        Promise.resolve(this.opts.onMessage(msg)).catch((err) => {
-          this.opts.logger.error(`[nexus] Message handler error: ${err}`);
-        });
-      } catch {
-        // ignore malformed messages
+    this.worker.on('message', (data: any) => {
+      if (data.type === '__connected') {
+        this._connected = true;
+        this.opts.onOpen?.();
+      } else if (data.type === '__disconnected') {
+        this._connected = false;
+        this.opts.onClose?.();
+      } else if (data.type === '__message') {
+        this.opts.onMessage(data.msg);
+      } else if (data.type === '__log') {
+        const level = data.level as 'info' | 'warn' | 'error';
+        this.opts.logger[level]?.(data.msg);
       }
     });
 
-    this.ws.on('close', () => {
-      this.stopHeartbeat();
-      this.opts.onClose?.();
-      this.scheduleReconnect();
+    this.worker.on('error', (err) => {
+      this.opts.logger.warn(`[nexus] Worker error: ${err.message}`);
     });
 
-    this.ws.on('error', (err) => {
-      this.opts.logger.warn(`[nexus] WebSocket error: ${err.message}`);
-      // close event will fire after error, triggering reconnect
+    this.worker.on('exit', (code) => {
+      this._connected = false;
+      this.worker = null;
+      if (code !== 0) {
+        this.opts.logger.warn(`[nexus] Worker exited with code ${code}`);
+      }
     });
+
+    this.worker.unref();
+    return this.worker;
+  }
+
+  /**
+   * Connect to server and send initial auth/register message.
+   * Idempotent — if already connected to same URL, re-sends auth.
+   */
+  connect(serverUrl: string, authMsg: { type: string; payload: any }): void {
+    this.ensureWorker().postMessage({ type: 'connect', serverUrl, authMsg });
   }
 
   send(msg: Omit<WsMessage, 'ts'>): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ ...msg, ts: new Date().toISOString() }));
-    }
+    this.worker?.postMessage({ type: 'send', msg });
   }
 
   destroy(): void {
-    this.destroyed = true;
-    this.stopHeartbeat();
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
+    this.worker?.postMessage({ type: 'destroy' });
+    this.worker = null;
+    this._connected = false;
   }
 
   get connected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => {
-      this.send({ type: 'heartbeat', payload: {} });
-    }, 30_000);
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.destroyed) return;
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, 30_000);
-    this.reconnectAttempt++;
-    this.opts.logger.info(`[nexus] Reconnecting in ${delay / 1000}s...`);
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, delay);
+    return this._connected;
   }
 }

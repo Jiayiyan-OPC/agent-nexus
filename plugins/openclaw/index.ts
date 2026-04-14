@@ -1,19 +1,30 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hostname, platform, release } from 'node:os';
+import { createInterface } from 'node:readline';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
 import { writeSkills, writeSkillUpdate } from './skills.js';
 
 type PluginConfig = {
-  serverUrl: string;
-  agentName: string;
-  role: string;
+  serverUrl?: string;
+  agentName?: string;
+  role?: string;
 };
 
 type PersistedState = {
   apiKey?: string;
   agentId?: string;
+  serverUrl?: string;
+  agentName?: string;
+  role?: string;
 };
+
+function prompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, (answer) => { rl.close(); resolve(answer.trim()); });
+  });
+}
 
 export default {
   id: 'agent-nexus',
@@ -21,20 +32,59 @@ export default {
   description: 'Connect to Agent Nexus for identity management, skill distribution, and session tracking',
 
   register(api: any) {
-    const config = api.pluginConfig as PluginConfig | undefined;
-    if (!config?.serverUrl || !config?.agentName || !config?.role) {
-      api.logger.warn('[nexus] Missing config. Run "clawdbot nexus setup" first.');
-      return;
-    }
+    const log = api.logger;
+    const pluginConfig = api.pluginConfig as PluginConfig | undefined;
+    const ocAgentNames: string[] = (api.config?.agents?.list ?? [])
+      .map((a: any) => a.identity?.name)
+      .filter(Boolean);
 
-    const dataDir = api.resolvePath('~/.clawdbot/extensions/agent-nexus');
+    const dataDir = api.resolvePath('~/.openclaw/extensions/agent-nexus');
     const stateFile = join(dataDir, 'state.json');
     const skillsDir = api.resolvePath('~/.openclaw/workspace/skills');
 
     let state: PersistedState = {};
-    let client: NexusWsClient;
 
-    // --- State persistence ---
+    // Single shared client — worker runs in separate thread
+    const client = new NexusWsClient({
+      onMessage(msg: WsMessage) {
+        switch (msg.type) {
+          case 'auth.ok':
+            log.info(`[nexus] Authenticated as ${msg.payload.name} (${msg.payload.role})`);
+            writeSkills(skillsDir, msg.payload.skills).catch(() => {});
+            break;
+          case 'auth.fail':
+            log.warn(`[nexus] Auth failed: ${msg.payload.reason}`);
+            state.apiKey = undefined;
+            saveState().catch(() => {});
+            break;
+          case 'register.pending':
+            state.agentId = msg.payload.agentId;
+            saveState().catch(() => {});
+            log.info(`[nexus] Registration pending approval (agentId: ${msg.payload.agentId})`);
+            break;
+          case 'register.approved':
+            state.apiKey = msg.payload.apiKey;
+            state.agentId = msg.payload.agentId;
+            saveState().catch(() => {});
+            log.info(`[nexus] Approved! Connected as ${msg.payload.name} (${msg.payload.role})`);
+            writeSkills(skillsDir, msg.payload.skills).catch(() => {});
+            break;
+          case 'register.rejected':
+            log.warn(`[nexus] Registration rejected: ${msg.payload.reason}`);
+            break;
+          case 'skills.update':
+            writeSkillUpdate(skillsDir, msg.payload.files).catch(() => {});
+            log.info(`[nexus] Skills updated (${msg.payload.scope})`);
+            break;
+          case 'heartbeat.ack':
+            break;
+          case 'error':
+            log.warn(`[nexus] Server error: ${msg.payload.reason}`);
+            break;
+        }
+      },
+      logger: log,
+    });
 
     async function loadState(): Promise<void> {
       try {
@@ -50,114 +100,22 @@ export default {
       await writeFile(stateFile, JSON.stringify(state, null, 2), 'utf-8');
     }
 
-    // --- Message handling ---
-
-    function handleMessage(msg: WsMessage): void {
-      switch (msg.type) {
-        case 'auth.ok':
-          api.logger.info(`[nexus] Authenticated as ${msg.payload.name} (${msg.payload.role})`);
-          writeSkills(skillsDir, msg.payload.skills).catch(() => {});
-          break;
-
-        case 'auth.fail':
-          api.logger.warn(`[nexus] Auth failed: ${msg.payload.reason}`);
-          state.apiKey = undefined;
-          saveState().catch(() => {});
-          break;
-
-        case 'register.pending':
-          state.agentId = msg.payload.agentId;
-          saveState().catch(() => {});
-          api.logger.info(`[nexus] Registration pending approval (agentId: ${msg.payload.agentId})`);
-          break;
-
-        case 'register.approved':
-          state.apiKey = msg.payload.apiKey;
-          state.agentId = msg.payload.agentId;
-          saveState().catch(() => {});
-          api.logger.info(`[nexus] Approved! Connected as ${msg.payload.name} (${msg.payload.role})`);
-          writeSkills(skillsDir, msg.payload.skills).catch(() => {});
-          break;
-
-        case 'register.rejected':
-          api.logger.warn(`[nexus] Registration rejected: ${msg.payload.reason}`);
-          break;
-
-        case 'skills.update':
-          writeSkillUpdate(skillsDir, msg.payload.files).catch(() => {});
-          api.logger.info(`[nexus] Skills updated (${msg.payload.scope})`);
-          break;
-
-        case 'heartbeat.ack':
-          break;
-
-        case 'error':
-          api.logger.warn(`[nexus] Server error: ${msg.payload.reason}`);
-          break;
-      }
+    function resolveConfig(): { serverUrl: string; agentName: string; role: string } {
+      return {
+        serverUrl: pluginConfig?.serverUrl || state.serverUrl || 'wss://api.agent-nexus.1702.store',
+        agentName: pluginConfig?.agentName || state.agentName || ocAgentNames[0] || hostname(),
+        role: pluginConfig?.role || state.role || '',
+      };
     }
 
-    function onConnected(): void {
+    function buildAuthMsg(cfg: { serverUrl: string; agentName: string; role: string }) {
       if (state.apiKey) {
-        client.send({
-          type: 'auth',
-          payload: {
-            apiKey: state.apiKey,
-            hostname: hostname(),
-            os: `${platform()} ${release()}`,
-          },
-        });
-      } else {
-        client.send({
-          type: 'register',
-          payload: {
-            name: config.agentName,
-            agentType: 'openclaw',
-            role: config.role,
-            hostname: hostname(),
-            os: `${platform()} ${release()}`,
-          },
-        });
+        return { type: 'auth', payload: { apiKey: state.apiKey, hostname: hostname(), os: `${platform()} ${release()}` } };
       }
+      return { type: 'register', payload: { name: cfg.agentName, agentType: 'openclaw', role: cfg.role, hostname: hostname(), os: `${platform()} ${release()}` } };
     }
 
-    // --- Plugin lifecycle ---
-
-    (async () => {
-      await loadState();
-
-      client = new NexusWsClient({
-        serverUrl: config.serverUrl,
-        onMessage: handleMessage,
-        onOpen: onConnected,
-        logger: api.logger,
-      });
-
-      client.connect();
-    })();
-
-    // Session hooks
-    api.on('session_start', (event: any) => {
-      if (!client?.connected || !state.apiKey) return;
-      client.send({
-        type: 'session.start',
-        payload: { sessionId: event.sessionId, taskName: event.resumedFrom ? `resumed:${event.resumedFrom}` : undefined },
-      });
-    });
-
-    api.on('session_end', (event: any) => {
-      if (!client?.connected || !state.apiKey) return;
-      client.send({
-        type: 'session.end',
-        payload: { sessionId: event.sessionId, status: 'completed' },
-      });
-    });
-
-    api.on('gateway_stop', () => {
-      client?.destroy();
-    });
-
-    // --- CLI: nexus setup ---
+    // --- CLI ---
 
     api.registerCli(({ program }: any) => {
       const nexus = program.command('nexus').description('Agent Nexus management');
@@ -174,47 +132,85 @@ export default {
             return;
           }
 
-          console.log(`Registering ${config.agentName} (${config.role}) with ${config.serverUrl}...`);
+          // --- Interactive: Agent Name ---
+          let setupName = '';
+          if (ocAgentNames.length > 0) {
+            console.log('\nAvailable agents:');
+            ocAgentNames.forEach((n, i) => console.log(`  ${i + 1}) ${n}`));
+            console.log(`  ${ocAgentNames.length + 1}) Enter a custom name`);
+            const choice = await prompt(`\nSelect agent [1]: `);
+            const idx = parseInt(choice || '1', 10) - 1;
+            if (idx >= 0 && idx < ocAgentNames.length) {
+              setupName = ocAgentNames[idx];
+            } else {
+              setupName = await prompt('Agent name: ');
+            }
+          } else {
+            setupName = await prompt(`Agent name [${hostname()}]: `) || hostname();
+          }
 
-          const ws = new NexusWsClient({
-            serverUrl: config.serverUrl,
-            onMessage: (msg) => {
+          // --- Interactive: Role ---
+          const roles = ['arch', 'pmo', 'dev', 'qa', 'devops'];
+          console.log('\nAvailable roles:');
+          roles.forEach((r, i) => console.log(`  ${i + 1}) ${r}`));
+          const roleChoice = await prompt(`\nSelect role [3]: `);
+          const roleIdx = parseInt(roleChoice || '3', 10) - 1;
+          const setupRole = roles[roleIdx] ?? roles[2];
+
+          // --- Interactive: Server URL ---
+          const defaultServer = 'wss://api.agent-nexus.1702.store';
+          const serverInput = await prompt(`\nServer URL [${defaultServer}]: `);
+          const setupServer = serverInput || defaultServer;
+
+          // Save config
+          state.serverUrl = setupServer;
+          state.agentName = setupName;
+          state.role = setupRole;
+          await saveState();
+
+          // Add to plugins.allow
+          const ocConfigPath = api.resolvePath('~/.openclaw/openclaw.json');
+          try {
+            let ocConfig: any = {};
+            try { ocConfig = JSON.parse(await readFile(ocConfigPath, 'utf-8')); } catch {}
+            if (!ocConfig.plugins) ocConfig.plugins = {};
+            if (!Array.isArray(ocConfig.plugins.allow)) ocConfig.plugins.allow = [];
+            if (!ocConfig.plugins.allow.includes('agent-nexus')) {
+              ocConfig.plugins.allow.push('agent-nexus');
+              await writeFile(ocConfigPath, JSON.stringify(ocConfig, null, 2), 'utf-8');
+              console.log('Added agent-nexus to plugins.allow');
+            }
+          } catch {
+            console.warn('Could not update openclaw.json — please add "agent-nexus" to plugins.allow manually.');
+          }
+
+          console.log(`\n  Server:  ${setupServer}`);
+          console.log(`  Name:    ${setupName}`);
+          console.log(`  Role:    ${setupRole}`);
+          console.log(`\nRegistering...`);
+
+          // Wait for register result via the shared client
+          await new Promise<void>((resolve) => {
+            const origOnMessage = client['opts'].onMessage;
+            client['opts'].onMessage = (msg: WsMessage) => {
+              origOnMessage(msg);
               if (msg.type === 'register.pending') {
-                state.agentId = msg.payload.agentId;
-                saveState();
-                console.log(`Registration submitted. Agent ID: ${msg.payload.agentId}`);
-                console.log('Waiting for admin approval. You can close this — approval will be picked up automatically.');
-                ws.destroy();
-                process.exit(0);
+                console.log(`\nRegistration submitted. Agent ID: ${msg.payload.agentId}`);
+                console.log('Waiting for admin approval...');
               } else if (msg.type === 'register.approved') {
-                state.apiKey = msg.payload.apiKey;
-                state.agentId = msg.payload.agentId;
-                saveState();
-                console.log(`Approved! API key saved. Agent is ready.`);
-                ws.destroy();
-                process.exit(0);
+                console.log('\nApproved! Agent is connected.');
+                client['opts'].onMessage = origOnMessage;
+                resolve();
               } else if (msg.type === 'register.rejected') {
-                console.error(`Rejected: ${msg.payload.reason}`);
-                ws.destroy();
-                process.exit(1);
+                console.error(`\nRejected: ${msg.payload.reason}`);
+                client['opts'].onMessage = origOnMessage;
+                resolve();
               }
-            },
-            onOpen: () => {
-              ws.send({
-                type: 'register',
-                payload: {
-                  name: config.agentName,
-                  agentType: 'openclaw',
-                  role: config.role,
-                  hostname: hostname(),
-                  os: `${platform()} ${release()}`,
-                },
-              });
-            },
-            logger: { info: () => {}, warn: console.warn, error: console.error },
-          });
+            };
 
-          ws.connect();
+            const cfg = { serverUrl: setupServer, agentName: setupName, role: setupRole };
+            client.connect(cfg.serverUrl, buildAuthMsg(cfg));
+          });
         });
 
       nexus
@@ -222,12 +218,45 @@ export default {
         .description('Show Agent Nexus connection status')
         .action(async () => {
           await loadState();
-          console.log(`Server:    ${config.serverUrl}`);
-          console.log(`Agent:     ${config.agentName} (${config.role})`);
+          const cfg = resolveConfig();
+          console.log(`Server:    ${cfg.serverUrl}`);
+          console.log(`Agent:     ${cfg.agentName} (${cfg.role || 'not configured'})`);
           console.log(`API Key:   ${state.apiKey ? state.apiKey.slice(0, 10) + '...' : 'not yet approved'}`);
           console.log(`Agent ID:  ${state.agentId ?? 'not registered'}`);
-          console.log(`Connected: ${client?.connected ? 'yes' : 'no'}`);
+          console.log(`Connected: ${client.connected ? 'yes' : 'no'}`);
         });
-    }, { commands: ['nexus'] });
+    }, { descriptors: [{ name: 'nexus', description: 'Agent Nexus management', hasSubcommands: true }] });
+
+    // --- Auto-connect on startup ---
+
+    process.nextTick(async () => {
+      try {
+        await loadState();
+        const cfg = resolveConfig();
+        if (!cfg.role) {
+          log.warn('[nexus] Not configured. Run "openclaw nexus setup" to get started.');
+          return;
+        }
+        log.info(`[nexus] Connecting as ${cfg.agentName} (${cfg.role}) to ${cfg.serverUrl}`);
+        client.connect(cfg.serverUrl, buildAuthMsg(cfg));
+      } catch (err) {
+        log.error(`[nexus] Auto-connect failed: ${err}`);
+      }
+    });
+
+    // Session hooks
+    api.on('session_start', (event: any) => {
+      if (!client.connected || !state.apiKey) return;
+      client.send({ type: 'session.start', payload: { sessionId: event.sessionId, taskName: event.resumedFrom ? `resumed:${event.resumedFrom}` : undefined } });
+    });
+
+    api.on('session_end', (event: any) => {
+      if (!client.connected || !state.apiKey) return;
+      client.send({ type: 'session.end', payload: { sessionId: event.sessionId, status: 'completed' } });
+    });
+
+    api.on('gateway_stop', () => {
+      client.destroy();
+    });
   },
 };

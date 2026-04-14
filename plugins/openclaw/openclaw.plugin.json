@@ -2,7 +2,7 @@
   "id": "agent-nexus",
   "name": "Agent Nexus",
   "description": "Connect to Agent Nexus for identity management, skill distribution, and session tracking",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -11,14 +11,15 @@
         "type": "string"
       },
       "agentName": {
-        "type": "string"
+        "type": "string",
+        "description": "Override agent name (defaults to OpenClaw identity name)"
       },
       "role": {
         "type": "string",
         "enum": ["arch", "pmo", "dev", "qa", "devops"]
       }
     },
-    "required": ["serverUrl", "agentName", "role"]
+    "required": []
   },
   "uiHints": {
     "serverUrl": {

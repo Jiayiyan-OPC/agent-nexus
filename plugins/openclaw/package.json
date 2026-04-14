@@ -1,10 +1,16 @@
 {
   "name": "@agent-nexus/openclaw-plugin",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.4.5"
+    },
+    "build": {
+      "openclawVersion": "2026.4.5"
+    }
   },
   "scripts": {
     "start": "tsx standalone.ts",
