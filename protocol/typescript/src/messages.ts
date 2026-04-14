@@ -16,6 +16,7 @@ export type RegisterPayload = {
   hostname?: string;
   mac?: string;
   os?: string;
+  masterToken?: string;
 };
 
 export type AuthPayload = {

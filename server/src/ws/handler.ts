@@ -6,6 +6,7 @@ import { getSkillsForRole } from '../skills/reader.js';
 import * as dao from '../db/dao.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
+const MASTER_TOKEN = process.env.MASTER_TOKEN || '';
 
 export function handleConnection(ws: WebSocket): void {
   let authenticated = false;
@@ -103,10 +104,25 @@ export function handleConnection(ws: WebSocket): void {
 }
 
 async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<void> {
+  const hasMasterToken = MASTER_TOKEN && payload.masterToken === MASTER_TOKEN;
+
   // Check if agent already exists (any status)
   const existing = await dao.findAgentByIdentity(payload.name, payload.agentType, payload.role);
 
   if (existing) {
+    // Master token can reactivate rejected/revoked agents
+    if (hasMasterToken && existing.status !== 'active') {
+      await dao.updateAgentStatus(existing.id, 'active');
+      addConnection(ws, { agentId: existing.id, role: existing.role, state: 'active' });
+      await dao.setAgentOnline(existing.id);
+      const skills = await getSkillsForRole(existing.role);
+      send(ws, {
+        type: 'register.approved',
+        payload: { apiKey: existing.api_key, agentId: existing.id, name: existing.name, role: existing.role, skills },
+        ts: '',
+      });
+      return;
+    }
     // Already approved — treat as auth, return approved with api_key
     if (existing.status === 'active') {
       addConnection(ws, { agentId: existing.id, role: existing.role, state: 'active' });
@@ -137,7 +153,7 @@ async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<
     return;
   }
 
-  // New agent — create and pend
+  // New agent — create
   const agent = await dao.createAgent({
     name: payload.name,
     agentType: payload.agentType,
@@ -147,6 +163,21 @@ async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<
     os: payload.os,
   });
 
+  // Master token: auto-approve immediately
+  if (hasMasterToken) {
+    await dao.updateAgentStatus(agent.id, 'active');
+    addConnection(ws, { agentId: agent.id, role: agent.role, state: 'active' });
+    await dao.setAgentOnline(agent.id);
+    const skills = await getSkillsForRole(agent.role);
+    send(ws, {
+      type: 'register.approved',
+      payload: { apiKey: agent.api_key, agentId: agent.id, name: agent.name, role: agent.role, skills },
+      ts: '',
+    });
+    return;
+  }
+
+  // No master token — pend for admin approval
   addConnection(ws, { agentId: agent.id, role: agent.role, state: 'pending_approval' });
   send(ws, {
     type: 'register.pending',
