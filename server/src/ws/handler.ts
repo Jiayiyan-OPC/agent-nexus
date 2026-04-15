@@ -83,7 +83,7 @@ export function handleConnection(ws: WebSocket): void {
           await dao.endSession(msg.payload.sessionId, msg.payload.status, msg.payload.tokenUsed);
           break;
         case 'event.send':
-          onEventSend(conn.agentId, ws, msg.payload as EventSendPayload);
+          await onEventSend(conn.agentId, ws, msg.payload as EventSendPayload);
           break;
         default:
           send(ws, { type: 'error', payload: { reason: `Unknown message type: ${(msg as any).type}` }, ts: '' });
