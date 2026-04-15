@@ -82,7 +82,7 @@ export default {
                   }
                 }
               })
-              .catch(() => {});
+              .catch((err) => log.error(`[nexus] Failed to write skills: ${err}`));
             break;
           case 'auth.fail':
             log.warn(`[nexus] Auth failed: ${msg.payload.reason}`);
@@ -114,13 +114,13 @@ export default {
                   }
                 }
               })
-              .catch(() => {});
+              .catch((err) => log.error(`[nexus] Failed to write skills: ${err}`));
             break;
           case 'register.rejected':
             log.warn(`[nexus] Registration rejected: ${msg.payload.reason}`);
             break;
           case 'skills.update':
-            writeSkillUpdate(skillsDir, msg.payload.files).catch(() => {});
+            writeSkillUpdate(skillsDir, msg.payload.files).catch((err) => log.error(`[nexus] Failed to write skill update: ${err}`));
             log.info(`[nexus] Skills updated (${msg.payload.scope})`);
             break;
           case 'heartbeat.ack':
