@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
 import { startHeartbeatMonitor } from './ws/heartbeat.js';
+import { startHeartbeatFlush } from './ws/status-cache.js';
 import { watchSkills } from './skills/watcher.js';
 import { getAllActiveConnections, getOnlineAgentsByRole } from './ws/state.js';
 import { send } from './ws/send.js';
@@ -35,6 +36,9 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', handleConnection);
 
 startHeartbeatMonitor();
+
+// Periodic heartbeat flush to DB (every 60s)
+startHeartbeatFlush(60_000);
 
 watchSkills((event) => {
   if (event.scope === 'global') {
