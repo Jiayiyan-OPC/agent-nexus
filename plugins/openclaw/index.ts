@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hostname, platform, release } from 'node:os';
 import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
 import { writeSkills, writeSkillUpdate } from './skills.js';
 
@@ -121,6 +122,14 @@ export default {
           case 'error':
             log.warn(`[nexus] Server error: ${msg.payload.reason}`);
             break;
+          case 'event.deliver':
+            handleEventDeliver(msg.payload, log, api).catch((err) =>
+              log.error(`[nexus] Failed to handle event.deliver: ${err}`),
+            );
+            break;
+          case 'event.ack':
+            log.info(`[nexus] Event ${msg.payload.eventId}: ${msg.payload.status}${msg.payload.reason ? ` (${msg.payload.reason})` : ''}`);
+            break;
         }
       },
       logger: log,
@@ -153,6 +162,49 @@ export default {
         return { type: 'auth', payload: { apiKey: state.apiKey, hostname: hostname(), os: `${platform()} ${release()}` } };
       }
       return { type: 'register', payload: { name: cfg.agentName, agentType: 'openclaw', role: cfg.role, hostname: hostname(), os: `${platform()} ${release()}` } };
+    }
+
+    // --- nexus.send_event tool ---
+
+    try {
+      const { Type } = await import('@sinclair/typebox');
+      api.registerTool({
+        name: 'nexus_send_event',
+        description: 'Send an event to another agent via Agent Nexus Event Bus. Fire-and-forget: returns eventId immediately.',
+        parameters: Type.Object({
+          targetAgentId: Type.String({ description: 'Target agent ID (UUID)' }),
+          content: Type.String({ description: 'Event content (text/markdown)' }),
+          url: Type.Optional(Type.String({ description: 'Optional URL reference' })),
+          eventType: Type.Optional(Type.String({ description: 'Event type (default: "task")' })),
+          correlationId: Type.Optional(Type.String({ description: 'Optional correlation ID for tracking' })),
+        }),
+        async execute(_id: string, params: any, ctx: any) {
+          if (!client.connected || !state.apiKey) {
+            return { content: [{ type: 'text', text: 'Error: Not connected to Agent Nexus.' }] };
+          }
+          const eventId = randomUUID();
+          const sourceContext = {
+            sessionId: ctx?.sessionId ?? 'unknown',
+            channel: ctx?.channel ?? 'unknown',
+            groupId: ctx?.groupId ?? undefined,
+          };
+          client.send({
+            type: 'event.send',
+            payload: {
+              eventId,
+              correlationId: params.correlationId,
+              eventType: params.eventType || 'task',
+              targetAgentId: params.targetAgentId,
+              content: params.content,
+              url: params.url,
+              payload: { sourceContext },
+            },
+          });
+          return { content: [{ type: 'text', text: `Event sent. eventId: ${eventId}` }] };
+        },
+      }, { optional: true });
+    } catch {
+      log.warn('[nexus] Could not register nexus_send_event tool (typebox not available)');
     }
 
     // --- CLI ---
@@ -300,3 +352,90 @@ export default {
     });
   },
 };
+
+// --- Event delivery handler ---
+
+async function handleEventDeliver(
+  payload: {
+    eventId: string;
+    correlationId?: string;
+    threadId?: string;
+    eventType: string;
+    sourceAgentId: string;
+    content?: string;
+    url?: string;
+    payload: Record<string, unknown>;
+  },
+  log: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
+  api: any,
+): Promise<void> {
+  const { eventId, correlationId, eventType, sourceAgentId, content, url } = payload;
+  const sourceContext = (payload.payload?.sourceContext ?? {}) as Record<string, string>;
+
+  // Format the event as initial input for a spawned session
+  const lines = [
+    `[AGENT NEXUS EVENT — eventType=${eventType}]`,
+    `from: ${sourceAgentId}`,
+    `correlationId: ${correlationId || 'none'}`,
+    `sourceContext:`,
+    `  sessionId: ${sourceContext.sessionId || 'none'}`,
+    `  channel:   ${sourceContext.channel || 'none'}`,
+    `  groupId:   ${sourceContext.groupId || 'none'}`,
+  ];
+  if (url) lines.push(`url: ${url}`);
+  lines.push('', content || '(no content)');
+
+  const initialInput = lines.join('\n');
+
+  log.info(`[nexus] Received event ${eventId} (type=${eventType}) from ${sourceAgentId}`);
+
+  // Try to spawn a session via Gateway HTTP API
+  try {
+    const gatewayInfo = await loadGatewayInfo(api);
+    if (!gatewayInfo) {
+      log.warn(`[nexus] Cannot spawn session: gateway info not available`);
+      return;
+    }
+
+    const spawnUrl = `http://127.0.0.1:${gatewayInfo.port}/sessions/spawn`;
+    const res = await fetch(spawnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${gatewayInfo.token}`,
+      },
+      body: JSON.stringify({
+        task: initialInput,
+        mode: 'run',
+        label: `nexus-event-${eventType}-${eventId.slice(0, 8)}`,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      log.warn(`[nexus] Spawn session failed (HTTP ${res.status}): ${body}`);
+      return;
+    }
+
+    log.info(`[nexus] Spawned session for event ${eventId}`);
+  } catch (err) {
+    log.error(`[nexus] Failed to spawn session for event ${eventId}: ${err}`);
+  }
+}
+
+async function loadGatewayInfo(
+  api: any,
+): Promise<{ port: number; token: string } | null> {
+  try {
+    // Try to read from openclaw.json config
+    const configPath = api.resolvePath('~/.openclaw/openclaw.json');
+    const raw = await readFile(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+    const port = config.gateway?.port ?? 18789;
+    const token = config.gateway?.auth?.token;
+    if (!token) return null;
+    return { port, token };
+  } catch {
+    return null;
+  }
+}
