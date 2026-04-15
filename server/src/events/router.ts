@@ -13,7 +13,7 @@ export async function onEventSend(
   sourceAgentId: string,
   sourceWs: WebSocket,
   payload: EventSendPayload,
-): void {
+): Promise<void> {
   const { eventId, correlationId, threadId, eventType, targetAgentId, content, url } = payload;
 
   // 1. Validate payload size
