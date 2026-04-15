@@ -43,12 +43,24 @@ export type SessionEndPayload = {
   tokenUsed?: number;
 };
 
+export type EventSendPayload = {
+  eventId: string;
+  correlationId?: string;
+  threadId?: string;
+  eventType: string;
+  targetAgentId: string;
+  content?: string;
+  url?: string;
+  payload: Record<string, unknown>;
+};
+
 export type AgentToServer =
   | WsMessage<'register', RegisterPayload>
   | WsMessage<'auth', AuthPayload>
   | WsMessage<'session.start', SessionStartPayload>
   | WsMessage<'session.update', SessionUpdatePayload>
   | WsMessage<'session.end', SessionEndPayload>
+  | WsMessage<'event.send', EventSendPayload>
   | WsMessage<'heartbeat', Record<string, never>>;
 
 // --- Server -> Agent ---
@@ -83,6 +95,23 @@ export type SkillsUpdatePayload = {
 
 export type ErrorPayload = { reason: string };
 
+export type EventDeliverPayload = {
+  eventId: string;
+  correlationId?: string;
+  threadId?: string;
+  eventType: string;
+  sourceAgentId: string;
+  content?: string;
+  url?: string;
+  payload: Record<string, unknown>;
+};
+
+export type EventAckPayload = {
+  eventId: string;
+  status: 'delivered' | 'rejected';
+  reason?: string;
+};
+
 export type ServerToAgent =
   | WsMessage<'auth.ok', AuthOkPayload>
   | WsMessage<'auth.fail', AuthFailPayload>
@@ -90,5 +119,7 @@ export type ServerToAgent =
   | WsMessage<'register.approved', RegisterApprovedPayload>
   | WsMessage<'register.rejected', RegisterRejectedPayload>
   | WsMessage<'skills.update', SkillsUpdatePayload>
+  | WsMessage<'event.deliver', EventDeliverPayload>
+  | WsMessage<'event.ack', EventAckPayload>
   | WsMessage<'heartbeat.ack', Record<string, never>>
   | WsMessage<'error', ErrorPayload>;

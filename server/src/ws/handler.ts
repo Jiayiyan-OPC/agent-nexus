@@ -1,10 +1,11 @@
 import type { WebSocket } from 'ws';
-import type { AgentToServer, RegisterPayload, AuthPayload } from '@agent-nexus/protocol';
+import type { AgentToServer, RegisterPayload, AuthPayload, EventSendPayload } from '@agent-nexus/protocol';
 import { send } from './send.js';
 import { addConnection, removeConnection, getConnectionBySocket, getConnectionByAgentId } from './state.js';
 import { getSkillsForRole } from '../skills/reader.js';
 import * as dao from '../db/dao.js';
 import * as statusCache from './status-cache.js';
+import { onEventSend } from '../events/router.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
 
@@ -80,6 +81,9 @@ export function handleConnection(ws: WebSocket): void {
           break;
         case 'session.end':
           await dao.endSession(msg.payload.sessionId, msg.payload.status, msg.payload.tokenUsed);
+          break;
+        case 'event.send':
+          await onEventSend(conn.agentId, ws, msg.payload as EventSendPayload);
           break;
         default:
           send(ws, { type: 'error', payload: { reason: `Unknown message type: ${(msg as any).type}` }, ts: '' });
