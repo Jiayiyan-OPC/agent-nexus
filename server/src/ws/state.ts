@@ -12,6 +12,15 @@ const agents = new Map<string, ConnectedAgent>();
 const wsBySocket = new Map<WebSocket, ConnectedAgent>();
 
 export function addConnection(ws: WebSocket, agent: Omit<ConnectedAgent, 'ws' | 'lastHeartbeat'>): ConnectedAgent {
+  // Close stale connection for the same agentId (prevents duplicate registrations)
+  const existing = agents.get(agent.agentId);
+  if (existing && existing.ws !== ws) {
+    try {
+      existing.ws.close();
+    } catch { /* already closed */ }
+    wsBySocket.delete(existing.ws);
+  }
+
   const conn: ConnectedAgent = { ...agent, ws, lastHeartbeat: Date.now() };
   agents.set(agent.agentId, conn);
   wsBySocket.set(ws, conn);
