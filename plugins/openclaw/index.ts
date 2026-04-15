@@ -165,6 +165,21 @@ export default {
     }
 
     // --- nexus.send_event tool ---
+    // Note: @sinclair/typebox is provided by the OpenClaw Plugin host runtime
+
+    interface SendEventParams {
+      targetAgentId: string;
+      content: string;
+      url?: string;
+      eventType?: string;
+      correlationId?: string;
+    }
+
+    interface ToolContext {
+      sessionId?: string;
+      channel?: string;
+      groupId?: string;
+    }
 
     try {
       const { Type } = await import('@sinclair/typebox');
@@ -178,16 +193,11 @@ export default {
           eventType: Type.Optional(Type.String({ description: 'Event type (default: "task")' })),
           correlationId: Type.Optional(Type.String({ description: 'Optional correlation ID for tracking' })),
         }),
-        async execute(_id: string, params: any, ctx: any) {
+        async execute(_id: string, params: SendEventParams, ctx: ToolContext) {
           if (!client.connected || !state.apiKey) {
             return { content: [{ type: 'text', text: 'Error: Not connected to Agent Nexus.' }] };
           }
           const eventId = randomUUID();
-          const sourceContext = {
-            sessionId: ctx?.sessionId ?? 'unknown',
-            channel: ctx?.channel ?? 'unknown',
-            groupId: ctx?.groupId ?? undefined,
-          };
           client.send({
             type: 'event.send',
             payload: {
@@ -197,7 +207,12 @@ export default {
               targetAgentId: params.targetAgentId,
               content: params.content,
               url: params.url,
-              payload: { sourceContext },
+              sourceContext: {
+                sessionId: ctx?.sessionId ?? 'unknown',
+                channel: ctx?.channel ?? 'unknown',
+                groupId: ctx?.groupId,
+              },
+              payload: {},
             },
           });
           return { content: [{ type: 'text', text: `Event sent. eventId: ${eventId}` }] };
@@ -364,13 +379,13 @@ async function handleEventDeliver(
     sourceAgentId: string;
     content?: string;
     url?: string;
+    sourceContext?: { sessionId?: string; channel?: string; groupId?: string };
     payload: Record<string, unknown>;
   },
   log: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
   api: any,
 ): Promise<void> {
-  const { eventId, correlationId, eventType, sourceAgentId, content, url } = payload;
-  const sourceContext = (payload.payload?.sourceContext ?? {}) as Record<string, string>;
+  const { eventId, correlationId, eventType, sourceAgentId, content, url, sourceContext } = payload;
 
   // Format the event as initial input for a spawned session
   const lines = [
@@ -378,9 +393,9 @@ async function handleEventDeliver(
     `from: ${sourceAgentId}`,
     `correlationId: ${correlationId || 'none'}`,
     `sourceContext:`,
-    `  sessionId: ${sourceContext.sessionId || 'none'}`,
-    `  channel:   ${sourceContext.channel || 'none'}`,
-    `  groupId:   ${sourceContext.groupId || 'none'}`,
+    `  sessionId: ${sourceContext?.sessionId || 'none'}`,
+    `  channel:   ${sourceContext?.channel || 'none'}`,
+    `  groupId:   ${sourceContext?.groupId || 'none'}`,
   ];
   if (url) lines.push(`url: ${url}`);
   lines.push('', content || '(no content)');
@@ -423,18 +438,28 @@ async function handleEventDeliver(
   }
 }
 
+// --- Gateway info cache (TTL 60s) ---
+
+let gatewayCache: { port: number; token: string } | null = null;
+let gatewayCacheTime = 0;
+const GATEWAY_CACHE_TTL = 60_000;
+
 async function loadGatewayInfo(
   api: any,
 ): Promise<{ port: number; token: string } | null> {
+  if (gatewayCache && Date.now() - gatewayCacheTime < GATEWAY_CACHE_TTL) {
+    return gatewayCache;
+  }
   try {
-    // Try to read from openclaw.json config
     const configPath = api.resolvePath('~/.openclaw/openclaw.json');
     const raw = await readFile(configPath, 'utf-8');
     const config = JSON.parse(raw);
     const port = config.gateway?.port ?? 18789;
     const token = config.gateway?.auth?.token;
     if (!token) return null;
-    return { port, token };
+    gatewayCache = { port, token };
+    gatewayCacheTime = Date.now();
+    return gatewayCache;
   } catch {
     return null;
   }
