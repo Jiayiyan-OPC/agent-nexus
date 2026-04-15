@@ -43,11 +43,15 @@ export function useAgents() {
         const data = payload.payload;
         if (!data?.agentId) return;
 
-        let matched = false;
         setAgents(prev => {
-          const updated = prev.map(agent => {
+          const idx = prev.findIndex(a => a.id === data.agentId);
+          if (idx === -1) {
+            // Agent not in current list (new agent came online), trigger full reload
+            setTimeout(() => load(), 0);
+            return prev;
+          }
+          return prev.map(agent => {
             if (agent.id !== data.agentId) return agent;
-            matched = true;
             return {
               ...agent,
               online_status: agent.online_status
@@ -60,11 +64,7 @@ export function useAgents() {
                 : agent.online_status,
             };
           });
-          return updated;
         });
-
-        // If agent not found in current list (new agent came online), refetch all
-        if (!matched) load();
       })
       .subscribe();
 
