@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'agent-nexus-dev-secret';
+const MASTER_TOKEN = process.env.MASTER_TOKEN || '';
 
 export interface JwtPayload {
   userId: string;
@@ -16,6 +17,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   const token = authHeader.slice(7);
+
+  // Master token: bypass JWT verification, grant full access
+  if (MASTER_TOKEN && token === MASTER_TOKEN) {
+    (req as any).user = { userId: 'master', email: 'master@agent-nexus' } satisfies JwtPayload;
+    next();
+    return;
+  }
+
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
     (req as any).user = payload;
