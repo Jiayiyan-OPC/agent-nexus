@@ -4,11 +4,12 @@ import { send } from '../ws/send.js';
 import { getConnectionByAgentId } from '../ws/state.js';
 import { enqueueAudit } from './audit.js';
 import { isRateLimited } from './rate-limit.js';
+import * as dao from '../db/dao.js';
 
 const MAX_CONTENT_BYTES = 64 * 1024; // 64KB
 const MAX_URL_BYTES = 2 * 1024; // 2KB
 
-export function onEventSend(
+export async function onEventSend(
   sourceAgentId: string,
   sourceWs: WebSocket,
   payload: EventSendPayload,
@@ -37,8 +38,11 @@ export function onEventSend(
   // 3. Resolve target
   const targetConn = getConnectionByAgentId(targetAgentId);
   if (!targetConn) {
-    sendAck(sourceWs, eventId, 'rejected', 'unknown_target');
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', 'unknown_target');
+    // Distinguish unknown agent from offline agent
+    const targetAgent = await dao.getAgentById(targetAgentId);
+    const reason = targetAgent ? 'target_offline' : 'unknown_target';
+    sendAck(sourceWs, eventId, 'rejected', reason);
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', reason);
     return;
   }
   if (targetConn.state !== 'active') {

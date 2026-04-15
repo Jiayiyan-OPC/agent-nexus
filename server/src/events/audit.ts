@@ -19,17 +19,23 @@ const FLUSH_THRESHOLD = 50;
 
 let buffer: AuditEntry[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;
+let isFlushing = false;
 
 async function flush(): Promise<void> {
-  if (buffer.length === 0) return;
+  if (isFlushing || buffer.length === 0) return;
+  isFlushing = true;
   const batch = buffer.splice(0);
-  const results = await Promise.allSettled(
-    batch.map(entry => dao.insertEventAudit(entry)),
-  );
-  for (let i = 0; i < results.length; i++) {
-    if (results[i].status === 'rejected') {
-      console.error('[audit] Failed to write event audit:', (results[i] as PromiseRejectedResult).reason);
+  try {
+    const results = await Promise.allSettled(
+      batch.map(entry => dao.insertEventAudit(entry)),
+    );
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'rejected') {
+        console.error('[audit] Failed to write event audit:', (results[i] as PromiseRejectedResult).reason);
+      }
     }
+  } finally {
+    isFlushing = false;
   }
 }
 

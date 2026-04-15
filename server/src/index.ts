@@ -7,6 +7,7 @@ import { handleConnection } from './ws/handler.js';
 import { startHeartbeatMonitor } from './ws/heartbeat.js';
 import { startHeartbeatFlush, onStatusChange } from './ws/status-cache.js';
 import { startAuditWriter } from './events/audit.js';
+import { startRateLimitCleanup } from './events/rate-limit.js';
 import { watchSkills } from './skills/watcher.js';
 import { getAllActiveConnections, getOnlineAgentsByRole } from './ws/state.js';
 import { send } from './ws/send.js';
@@ -41,6 +42,9 @@ startHeartbeatMonitor();
 
 // Start event audit writer (batched, 200ms flush)
 startAuditWriter();
+
+// Start rate limit bucket cleanup (every 5 min)
+startRateLimitCleanup();
 
 // Periodic heartbeat flush to DB (every 60s)
 startHeartbeatFlush(60_000);

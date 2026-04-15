@@ -13,6 +13,29 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
+// Stale bucket cleanup interval (5 minutes)
+const STALE_MS = 5 * 60 * 1000;
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startRateLimitCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [id, bucket] of buckets) {
+      if (now - bucket.lastRefill > STALE_MS) {
+        buckets.delete(id);
+      }
+    }
+  }, STALE_MS);
+  if (cleanupTimer && typeof cleanupTimer === 'object' && 'unref' in cleanupTimer) {
+    cleanupTimer.unref();
+  }
+}
+
+export function clearBucket(agentId: string): void {
+  buckets.delete(agentId);
+}
+
 export function isRateLimited(
   agentId: string,
   capacity = DEFAULT_CAPACITY,
