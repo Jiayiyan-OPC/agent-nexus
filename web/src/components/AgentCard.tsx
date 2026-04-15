@@ -52,8 +52,12 @@ export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus;
                 <Button size="sm" variant="destructive" onClick={async (e) => {
                   e.stopPropagation();
                   if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
-                  await revokeAgent(agent.id);
-                  onAction?.();
+                  try {
+                    await revokeAgent(agent.id);
+                    onAction?.();
+                  } catch {
+                    alert('Failed to delete agent. Please try again.');
+                  }
                 }}>Delete</Button>
               </div>
             )}
@@ -78,9 +82,13 @@ export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus;
               autoFocus
               onKeyDown={async (e) => {
                 if (e.key === 'Enter' && newName.trim()) {
-                  await updateAgent(agent.id, { name: newName.trim() });
-                  setRenaming(false);
-                  onAction?.();
+                  try {
+                    await updateAgent(agent.id, { name: newName.trim() });
+                    setRenaming(false);
+                    onAction?.();
+                  } catch {
+                    alert('Failed to rename agent. Please try again.');
+                  }
                 } else if (e.key === 'Escape') {
                   setRenaming(false);
                   setNewName(agent.name);
@@ -89,9 +97,13 @@ export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus;
             />
             <Button size="sm" onClick={async () => {
               if (!newName.trim()) return;
-              await updateAgent(agent.id, { name: newName.trim() });
-              setRenaming(false);
-              onAction?.();
+              try {
+                await updateAgent(agent.id, { name: newName.trim() });
+                setRenaming(false);
+                onAction?.();
+              } catch {
+                alert('Failed to rename agent. Please try again.');
+              }
             }}>Save</Button>
             <Button size="sm" variant="outline" onClick={() => { setRenaming(false); setNewName(agent.name); }}>Cancel</Button>
           </div>
