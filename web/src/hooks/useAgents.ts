@@ -70,6 +70,12 @@ export function useAgentSessions(agentId: string) {
   useEffect(() => {
     load();
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(load, 400);
+    };
+
     const sub = supabase
       .channel(`sessions-${agentId}`)
       .on('postgres_changes', {
@@ -77,10 +83,13 @@ export function useAgentSessions(agentId: string) {
         schema: 'public',
         table: 'agent_sessions',
         filter: `agent_id=eq.${agentId}`,
-      }, () => load())
+      }, () => debouncedLoad())
       .subscribe();
 
-    return () => { supabase.removeChannel(sub); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(sub);
+    };
   }, [agentId, load]);
 
   return { sessions, loading, reload: load };
