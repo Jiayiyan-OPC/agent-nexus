@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handleConnection } from './ws/handler.js';
 import { startHeartbeatMonitor } from './ws/heartbeat.js';
-import { startHeartbeatFlush } from './ws/status-cache.js';
+import { startHeartbeatFlush, onStatusChange } from './ws/status-cache.js';
 import { watchSkills } from './skills/watcher.js';
 import { getAllActiveConnections, getOnlineAgentsByRole } from './ws/state.js';
 import { send } from './ws/send.js';
@@ -14,6 +14,7 @@ import { agentsRouter } from './api/agents.js';
 import { statusRouter } from './api/status.js';
 import { skillsRouter } from './api/skills.js';
 import { authRouter } from './api/auth.js';
+import { supabase } from './db/supabase.js';
 
 const app = express();
 app.use(cors());
@@ -39,6 +40,25 @@ startHeartbeatMonitor();
 
 // Periodic heartbeat flush to DB (every 60s)
 startHeartbeatFlush(60_000);
+
+// Broadcast status changes via Supabase Realtime broadcast channel
+const broadcastChannel = supabase.channel('agent-status-changes');
+broadcastChannel.subscribe();
+onStatusChange((agentId, status) => {
+  broadcastChannel.send({
+    type: 'broadcast',
+    event: 'status-change',
+    payload: {
+      agentId,
+      status: status.status,
+      activeSessions: status.activeSessions,
+      totalTokenUsed: status.totalTokenUsed,
+      timestamp: new Date().toISOString(),
+    },
+  }).catch((err: unknown) => {
+    console.error('[broadcast] Failed to broadcast status change:', err);
+  });
+});
 
 watchSkills((event) => {
   if (event.scope === 'global') {
