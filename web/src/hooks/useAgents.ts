@@ -39,21 +39,32 @@ export function useAgents() {
     const statusSub = supabase
       .channel('agent-status-changes')
       .on('broadcast', { event: 'status-change' }, (payload) => {
-        // Update the specific agent's status in-place without refetching all
-        setAgents(prev => prev.map(agent => {
-          if (agent.id !== payload.payload?.agentId) return agent;
-          return {
-            ...agent,
-            online_status: agent.online_status
-              ? {
-                  ...agent.online_status,
-                  status: payload.payload.status ?? agent.online_status.status,
-                  active_sessions: payload.payload.activeSessions ?? agent.online_status.active_sessions,
-                  total_token_used: payload.payload.totalTokenUsed ?? agent.online_status.total_token_used,
-                }
-              : agent.online_status,
-          };
-        }));
+        // Supabase broadcast wraps user data under payload.payload
+        const data = payload.payload;
+        if (!data?.agentId) return;
+
+        let matched = false;
+        setAgents(prev => {
+          const updated = prev.map(agent => {
+            if (agent.id !== data.agentId) return agent;
+            matched = true;
+            return {
+              ...agent,
+              online_status: agent.online_status
+                ? {
+                    ...agent.online_status,
+                    status: data.status ?? agent.online_status.status,
+                    active_sessions: data.activeSessions ?? agent.online_status.active_sessions,
+                    total_token_used: data.totalTokenUsed ?? agent.online_status.total_token_used,
+                  }
+                : agent.online_status,
+            };
+          });
+          return updated;
+        });
+
+        // If agent not found in current list (new agent came online), refetch all
+        if (!matched) load();
       })
       .subscribe();
 
