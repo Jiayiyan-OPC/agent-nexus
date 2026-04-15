@@ -51,6 +51,11 @@ export type EventSendPayload = {
   targetAgentId: string;
   content?: string;
   url?: string;
+  sourceContext?: {
+    sessionId?: string;
+    channel?: string;
+    groupId?: string;
+  };
   payload: Record<string, unknown>;
 };
 
@@ -103,6 +108,11 @@ export type EventDeliverPayload = {
   sourceAgentId: string;
   content?: string;
   url?: string;
+  sourceContext?: {
+    sessionId?: string;
+    channel?: string;
+    groupId?: string;
+  };
   payload: Record<string, unknown>;
 };
 

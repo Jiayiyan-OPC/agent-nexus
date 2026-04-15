@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hostname, platform, release } from 'node:os';
 import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
 import { writeSkills, writeSkillUpdate } from './skills.js';
 
@@ -121,6 +122,14 @@ export default {
           case 'error':
             log.warn(`[nexus] Server error: ${msg.payload.reason}`);
             break;
+          case 'event.deliver':
+            handleEventDeliver(msg.payload, log, api).catch((err) =>
+              log.error(`[nexus] Failed to handle event.deliver: ${err}`),
+            );
+            break;
+          case 'event.ack':
+            log.info(`[nexus] Event ${msg.payload.eventId}: ${msg.payload.status}${msg.payload.reason ? ` (${msg.payload.reason})` : ''}`);
+            break;
         }
       },
       logger: log,
@@ -153,6 +162,64 @@ export default {
         return { type: 'auth', payload: { apiKey: state.apiKey, hostname: hostname(), os: `${platform()} ${release()}` } };
       }
       return { type: 'register', payload: { name: cfg.agentName, agentType: 'openclaw', role: cfg.role, hostname: hostname(), os: `${platform()} ${release()}` } };
+    }
+
+    // --- nexus.send_event tool ---
+    // Note: @sinclair/typebox is provided by the OpenClaw Plugin host runtime
+
+    interface SendEventParams {
+      targetAgentId: string;
+      content: string;
+      url?: string;
+      eventType?: string;
+      correlationId?: string;
+    }
+
+    interface ToolContext {
+      sessionId?: string;
+      channel?: string;
+      groupId?: string;
+    }
+
+    try {
+      const { Type } = await import('@sinclair/typebox');
+      api.registerTool({
+        name: 'nexus_send_event',
+        description: 'Send an event to another agent via Agent Nexus Event Bus. Fire-and-forget: returns eventId immediately.',
+        parameters: Type.Object({
+          targetAgentId: Type.String({ description: 'Target agent ID (UUID)' }),
+          content: Type.String({ description: 'Event content (text/markdown)' }),
+          url: Type.Optional(Type.String({ description: 'Optional URL reference' })),
+          eventType: Type.Optional(Type.String({ description: 'Event type (default: "task")' })),
+          correlationId: Type.Optional(Type.String({ description: 'Optional correlation ID for tracking' })),
+        }),
+        async execute(_id: string, params: SendEventParams, ctx: ToolContext) {
+          if (!client.connected || !state.apiKey) {
+            return { content: [{ type: 'text', text: 'Error: Not connected to Agent Nexus.' }] };
+          }
+          const eventId = randomUUID();
+          client.send({
+            type: 'event.send',
+            payload: {
+              eventId,
+              correlationId: params.correlationId,
+              eventType: params.eventType || 'task',
+              targetAgentId: params.targetAgentId,
+              content: params.content,
+              url: params.url,
+              sourceContext: {
+                sessionId: ctx?.sessionId ?? 'unknown',
+                channel: ctx?.channel ?? 'unknown',
+                groupId: ctx?.groupId,
+              },
+              payload: {},
+            },
+          });
+          return { content: [{ type: 'text', text: `Event sent. eventId: ${eventId}` }] };
+        },
+      }, { optional: true });
+    } catch {
+      log.warn('[nexus] Could not register nexus_send_event tool (typebox not available)');
     }
 
     // --- CLI ---
@@ -300,3 +367,100 @@ export default {
     });
   },
 };
+
+// --- Event delivery handler ---
+
+async function handleEventDeliver(
+  payload: {
+    eventId: string;
+    correlationId?: string;
+    threadId?: string;
+    eventType: string;
+    sourceAgentId: string;
+    content?: string;
+    url?: string;
+    sourceContext?: { sessionId?: string; channel?: string; groupId?: string };
+    payload: Record<string, unknown>;
+  },
+  log: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
+  api: any,
+): Promise<void> {
+  const { eventId, correlationId, eventType, sourceAgentId, content, url, sourceContext } = payload;
+
+  // Format the event as initial input for a spawned session
+  const lines = [
+    `[AGENT NEXUS EVENT — eventType=${eventType}]`,
+    `from: ${sourceAgentId}`,
+    `correlationId: ${correlationId || 'none'}`,
+    `sourceContext:`,
+    `  sessionId: ${sourceContext?.sessionId || 'none'}`,
+    `  channel:   ${sourceContext?.channel || 'none'}`,
+    `  groupId:   ${sourceContext?.groupId || 'none'}`,
+  ];
+  if (url) lines.push(`url: ${url}`);
+  lines.push('', content || '(no content)');
+
+  const initialInput = lines.join('\n');
+
+  log.info(`[nexus] Received event ${eventId} (type=${eventType}) from ${sourceAgentId}`);
+
+  // Try to spawn a session via Gateway HTTP API
+  try {
+    const gatewayInfo = await loadGatewayInfo(api);
+    if (!gatewayInfo) {
+      log.warn(`[nexus] Cannot spawn session: gateway info not available`);
+      return;
+    }
+
+    const spawnUrl = `http://127.0.0.1:${gatewayInfo.port}/sessions/spawn`;
+    const res = await fetch(spawnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${gatewayInfo.token}`,
+      },
+      body: JSON.stringify({
+        task: initialInput,
+        mode: 'run',
+        label: `nexus-event-${eventType}-${eventId.slice(0, 8)}`,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      log.warn(`[nexus] Spawn session failed (HTTP ${res.status}): ${body}`);
+      return;
+    }
+
+    log.info(`[nexus] Spawned session for event ${eventId}`);
+  } catch (err) {
+    log.error(`[nexus] Failed to spawn session for event ${eventId}: ${err}`);
+  }
+}
+
+// --- Gateway info cache (TTL 60s) ---
+
+let gatewayCache: { port: number; token: string } | null = null;
+let gatewayCacheTime = 0;
+const GATEWAY_CACHE_TTL = 60_000;
+
+async function loadGatewayInfo(
+  api: any,
+): Promise<{ port: number; token: string } | null> {
+  if (gatewayCache && Date.now() - gatewayCacheTime < GATEWAY_CACHE_TTL) {
+    return gatewayCache;
+  }
+  try {
+    const configPath = api.resolvePath('~/.openclaw/openclaw.json');
+    const raw = await readFile(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+    const port = config.gateway?.port ?? 18789;
+    const token = config.gateway?.auth?.token;
+    if (!token) return null;
+    gatewayCache = { port, token };
+    gatewayCacheTime = Date.now();
+    return gatewayCache;
+  } catch {
+    return null;
+  }
+}

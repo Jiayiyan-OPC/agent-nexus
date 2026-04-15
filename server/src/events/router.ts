@@ -14,24 +14,24 @@ export async function onEventSend(
   sourceWs: WebSocket,
   payload: EventSendPayload,
 ): Promise<void> {
-  const { eventId, correlationId, threadId, eventType, targetAgentId, content, url } = payload;
+  const { eventId, correlationId, threadId, eventType, targetAgentId, content, url, sourceContext } = payload;
 
   // 1. Validate payload size
   if (content && Buffer.byteLength(content, 'utf-8') > MAX_CONTENT_BYTES) {
     sendAck(sourceWs, eventId, 'rejected', 'content_too_large');
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', 'content_too_large');
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'rejected', 'content_too_large');
     return;
   }
   if (url && Buffer.byteLength(url, 'utf-8') > MAX_URL_BYTES) {
     sendAck(sourceWs, eventId, 'rejected', 'url_too_large');
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', 'url_too_large');
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'rejected', 'url_too_large');
     return;
   }
 
   // 2. Rate limit
   if (isRateLimited(sourceAgentId)) {
     sendAck(sourceWs, eventId, 'rejected', 'rate_limited');
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', 'rate_limited');
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'rejected', 'rate_limited');
     return;
   }
 
@@ -42,12 +42,12 @@ export async function onEventSend(
     const targetAgent = await dao.getAgentById(targetAgentId);
     const reason = targetAgent ? 'target_offline' : 'unknown_target';
     sendAck(sourceWs, eventId, 'rejected', reason);
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', reason);
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'rejected', reason);
     return;
   }
   if (targetConn.state !== 'active') {
     sendAck(sourceWs, eventId, 'rejected', 'target_offline');
-    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'rejected', 'target_offline');
+    audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'rejected', 'target_offline');
     return;
   }
 
@@ -62,6 +62,7 @@ export async function onEventSend(
       sourceAgentId,
       content,
       url,
+      sourceContext,
       payload: payload.payload,
     },
     ts: '',
@@ -71,7 +72,7 @@ export async function onEventSend(
   sendAck(sourceWs, eventId, 'delivered');
 
   // 6. Audit
-  audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, payload.payload, 'delivered');
+  audit(eventId, correlationId, threadId, eventType, sourceAgentId, targetAgentId, sourceContext, payload.payload, 'delivered');
 }
 
 function sendAck(
@@ -94,6 +95,7 @@ function audit(
   eventType: string,
   sourceAgentId: string,
   targetAgentId: string,
+  sourceContext: Record<string, unknown> | undefined,
   payload: Record<string, unknown>,
   state: 'received' | 'delivered' | 'rejected',
   errorMessage?: string,
@@ -105,6 +107,7 @@ function audit(
     eventType,
     sourceAgentId,
     targetAgentId,
+    sourceContext,
     payload,
     state,
     errorMessage,
