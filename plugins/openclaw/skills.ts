@@ -9,7 +9,6 @@ export async function writeSkills(
 ): Promise<{ written: number }> {
   const all = [...skills.global, ...skills.role];
   if (all.length === 0) {
-    console.warn('[nexus] Server returned empty skills — nothing to write');
     return { written: 0 };
   }
   // Ensure the base skills directory exists before writing any skill
