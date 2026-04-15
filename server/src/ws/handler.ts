@@ -4,6 +4,7 @@ import { send } from './send.js';
 import { addConnection, removeConnection, getConnectionBySocket, getConnectionByAgentId } from './state.js';
 import { getSkillsForRole } from '../skills/reader.js';
 import * as dao from '../db/dao.js';
+import * as statusCache from './status-cache.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
 
@@ -60,7 +61,7 @@ export function handleConnection(ws: WebSocket): void {
       switch (msg.type) {
         case 'heartbeat':
           conn.lastHeartbeat = Date.now();
-          await dao.updateHeartbeat(conn.agentId);
+          statusCache.updateHeartbeat(conn.agentId); // memory only, DB flushed periodically
           send(ws, { type: 'heartbeat.ack', payload: {}, ts: '' });
           break;
         case 'session.start':
@@ -94,7 +95,8 @@ export function handleConnection(ws: WebSocket): void {
       clearTimeout(authTimer);
       const conn = removeConnection(ws);
       if (conn && conn.state === 'active') {
-        await dao.setAgentOffline(conn.agentId);
+        statusCache.removeAgent(conn.agentId);
+        await statusCache.updateStatus(conn.agentId, { status: 'offline', activeSessions: 0 });
       }
     } catch (err) {
       console.error('[ws] Close handler error:', err);
@@ -111,6 +113,7 @@ async function handleRegister(ws: WebSocket, payload: RegisterPayload): Promise<
     if (existing.status === 'active') {
       addConnection(ws, { agentId: existing.id, role: existing.role, state: 'active' });
       await dao.setAgentOnline(existing.id);
+      statusCache.initAgent(existing.id);
       const skills = await getSkillsForRole(existing.role);
       send(ws, {
         type: 'register.approved',
@@ -178,6 +181,7 @@ async function handleAuth(ws: WebSocket, payload: AuthPayload): Promise<boolean>
 
   addConnection(ws, { agentId: agent.id, role: agent.role, state: 'active' });
   await dao.setAgentOnline(agent.id);
+  statusCache.initAgent(agent.id);
 
   const skills = await getSkillsForRole(agent.role);
   send(ws, {
@@ -198,6 +202,7 @@ export async function notifyAgentApproved(agentId: string): Promise<void> {
 
   agentConn.state = 'active';
   await dao.setAgentOnline(agentId);
+  statusCache.initAgent(agentId);
 
   const skills = await getSkillsForRole(agent.role);
   send(agentConn.ws, {
