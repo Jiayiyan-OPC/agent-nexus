@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './supabase.js';
-import type { AgentRow, AgentStatusRow, AgentSessionRow, AgentStatus, OnlineStatus, SessionStatus } from '@agent-nexus/protocol';
+import type { AgentRow, AgentStatusRow, AgentSessionRow, AgentEventRow, AgentEventState, AgentStatus, OnlineStatus, SessionStatus } from '@agent-nexus/protocol';
 
 // --- Agents ---
 
@@ -241,4 +241,81 @@ export async function getActiveSessionsByAgent(agentId: string): Promise<AgentSe
     .order('started_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as AgentSessionRow[];
+}
+
+// --- Agent Events ---
+
+export async function insertEventAudit(params: {
+  eventId: string;
+  correlationId?: string;
+  threadId?: string;
+  eventType: string;
+  sourceAgentId?: string;
+  targetAgentId?: string;
+  sourceContext?: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  state: AgentEventState;
+  errorMessage?: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('agent_events')
+    .insert({
+      event_id: params.eventId,
+      correlation_id: params.correlationId ?? null,
+      thread_id: params.threadId ?? null,
+      event_type: params.eventType,
+      source_agent_id: params.sourceAgentId ?? null,
+      target_agent_id: params.targetAgentId ?? null,
+      source_context: params.sourceContext ?? null,
+      payload: params.payload,
+      state: params.state,
+      error_message: params.errorMessage ?? null,
+    });
+  if (error) throw error;
+}
+
+export async function getEventsByTarget(
+  targetAgentId: string,
+  options?: { limit?: number; since?: string },
+): Promise<AgentEventRow[]> {
+  let query = supabase
+    .from('agent_events')
+    .select('*')
+    .eq('target_agent_id', targetAgentId)
+    .order('created_at', { ascending: false });
+  if (options?.since) query = query.gte('created_at', options.since);
+  if (options?.limit) query = query.limit(options.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as AgentEventRow[];
+}
+
+export async function getEventsBySource(
+  sourceAgentId: string,
+  options?: { limit?: number; since?: string },
+): Promise<AgentEventRow[]> {
+  let query = supabase
+    .from('agent_events')
+    .select('*')
+    .eq('source_agent_id', sourceAgentId)
+    .order('created_at', { ascending: false });
+  if (options?.since) query = query.gte('created_at', options.since);
+  if (options?.limit) query = query.limit(options.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as AgentEventRow[];
+}
+
+export async function updateEventState(
+  id: string,
+  state: AgentEventState,
+  errorMessage?: string,
+): Promise<void> {
+  const update: Record<string, unknown> = { state };
+  if (errorMessage !== undefined) update.error_message = errorMessage;
+  const { error } = await supabase
+    .from('agent_events')
+    .update(update)
+    .eq('id', id);
+  if (error) throw error;
 }
