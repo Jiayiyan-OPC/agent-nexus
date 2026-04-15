@@ -29,21 +29,37 @@ export function useAgents() {
   useEffect(() => {
     load();
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedLoad = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(load, 5000);
-    };
-
+    // Subscribe to agents table changes (insert/update/delete)
     const agentsSub = supabase
       .channel('agents-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_status' }, () => debouncedLoad())
+      .subscribe();
+
+    // Subscribe to status broadcast channel (replaces agent_status postgres_changes)
+    const statusSub = supabase
+      .channel('agent-status-changes')
+      .on('broadcast', { event: 'status-change' }, (payload) => {
+        // Update the specific agent's status in-place without refetching all
+        setAgents(prev => prev.map(agent => {
+          if (agent.id !== payload.payload?.agentId) return agent;
+          return {
+            ...agent,
+            online_status: agent.online_status
+              ? {
+                  ...agent.online_status,
+                  status: payload.payload.status ?? agent.online_status.status,
+                  active_sessions: payload.payload.activeSessions ?? agent.online_status.active_sessions,
+                  total_token_used: payload.payload.totalTokenUsed ?? agent.online_status.total_token_used,
+                }
+              : agent.online_status,
+          };
+        }));
+      })
       .subscribe();
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(agentsSub);
+      supabase.removeChannel(statusSub);
     };
   }, [load]);
 
