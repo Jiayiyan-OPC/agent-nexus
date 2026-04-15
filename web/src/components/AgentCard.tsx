@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import StatusBadge from './StatusBadge';
 import RoleBadge from './RoleBadge';
 import SessionList from './SessionList';
 import type { AgentWithStatus } from '../hooks/useAgents';
 import { useAgentSessions } from '../hooks/useAgents';
-import { approveAgent, rejectAgent } from '../lib/api';
+import { approveAgent, rejectAgent, updateAgent, revokeAgent } from '../lib/api';
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return '—';
@@ -22,6 +23,8 @@ function timeAgo(dateStr: string | null): string {
 
 export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus; onAction?: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(agent.name);
   const isPending = agent.status === 'pending_approval';
   const onlineStatus = agent.online_status?.status ?? 'offline';
 
@@ -43,7 +46,16 @@ export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus;
                 <Button size="sm" variant="destructive" onClick={async (e) => { e.stopPropagation(); await rejectAgent(agent.id); onAction?.(); }}>Reject</Button>
               </div>
             ) : (
-              <StatusBadge status={onlineStatus} />
+              <div className="flex items-center gap-2">
+                <StatusBadge status={onlineStatus} />
+                <Button size="sm" variant="outline" onClick={async (e) => { e.stopPropagation(); setRenaming(true); }}>Rename</Button>
+                <Button size="sm" variant="destructive" onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+                  await revokeAgent(agent.id);
+                  onAction?.();
+                }}>Delete</Button>
+              </div>
             )}
           </div>
         </div>
@@ -55,6 +67,36 @@ export default function AgentCard({ agent, onAction }: { agent: AgentWithStatus;
           </div>
         )}
       </CardHeader>
+      {renaming && (
+        <CardContent className="border-t pt-3">
+          <div className="flex items-center gap-2">
+            <Input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="New name"
+              className="max-w-xs"
+              autoFocus
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && newName.trim()) {
+                  await updateAgent(agent.id, { name: newName.trim() });
+                  setRenaming(false);
+                  onAction?.();
+                } else if (e.key === 'Escape') {
+                  setRenaming(false);
+                  setNewName(agent.name);
+                }
+              }}
+            />
+            <Button size="sm" onClick={async () => {
+              if (!newName.trim()) return;
+              await updateAgent(agent.id, { name: newName.trim() });
+              setRenaming(false);
+              onAction?.();
+            }}>Save</Button>
+            <Button size="sm" variant="outline" onClick={() => { setRenaming(false); setNewName(agent.name); }}>Cancel</Button>
+          </div>
+        </CardContent>
+      )}
       {expanded && <ExpandedSessions agentId={agent.id} />}
     </Card>
   );
