@@ -47,3 +47,20 @@ export interface SkillRow {
   created_at: string;
   updated_at: string;
 }
+
+export type AgentEventState = 'received' | 'delivered' | 'rejected';
+
+export interface AgentEventRow {
+  id: string;
+  event_id: string;
+  correlation_id: string | null;
+  thread_id: string | null;
+  event_type: string;
+  source_agent_id: string | null;
+  target_agent_id: string | null;
+  source_context: Record<string, unknown> | null;
+  payload: Record<string, unknown>;
+  state: AgentEventState;
+  error_message: string | null;
+  created_at: string;
+}
