@@ -256,8 +256,8 @@ export async function insertEventAudit(params: {
   payload: Record<string, unknown>;
   state: AgentEventState;
   errorMessage?: string;
-}): Promise<AgentEventRow> {
-  const { data, error } = await supabase
+}): Promise<void> {
+  const { error } = await supabase
     .from('agent_events')
     .insert({
       event_id: params.eventId,
@@ -270,11 +270,8 @@ export async function insertEventAudit(params: {
       payload: params.payload,
       state: params.state,
       error_message: params.errorMessage ?? null,
-    })
-    .select()
-    .single();
+    });
   if (error) throw error;
-  return data as AgentEventRow;
 }
 
 export async function getEventsByTarget(

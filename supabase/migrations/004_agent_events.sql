@@ -5,8 +5,8 @@ CREATE TABLE agent_events (
   correlation_id     UUID,
   thread_id          UUID,
   event_type         TEXT NOT NULL,
-  source_agent_id    UUID REFERENCES agents(id),
-  target_agent_id    UUID REFERENCES agents(id),
+  source_agent_id    UUID REFERENCES agents(id) ON DELETE SET NULL,
+  target_agent_id    UUID REFERENCES agents(id) ON DELETE SET NULL,
   source_context     JSONB,
   payload            JSONB NOT NULL,
   state              TEXT NOT NULL CHECK (state IN ('received', 'delivered', 'rejected')),
@@ -15,7 +15,7 @@ CREATE TABLE agent_events (
 );
 
 -- Indexes for efficient querying
-CREATE INDEX agent_events_event_id_idx       ON agent_events (event_id);
+CREATE UNIQUE INDEX agent_events_event_id_idx ON agent_events (event_id);
 CREATE INDEX agent_events_target_created_idx ON agent_events (target_agent_id, created_at DESC);
 CREATE INDEX agent_events_source_created_idx ON agent_events (source_agent_id, created_at DESC);
 
