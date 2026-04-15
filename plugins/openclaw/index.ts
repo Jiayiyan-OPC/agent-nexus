@@ -5,6 +5,27 @@ import { createInterface } from 'node:readline';
 import { NexusWsClient, type WsMessage } from './ws-client.js';
 import { writeSkills, writeSkillUpdate } from './skills.js';
 
+async function fetchSkillsViaRest(
+  serverUrl: string,
+  apiKey: string,
+  role: string,
+): Promise<{ global: { name: string; content: string }[]; role: { name: string; content: string }[] } | null> {
+  try {
+    // Convert ws(s):// to http(s)://
+    const httpUrl = serverUrl.replace(/^ws(s)?:\/\//, 'http$1://');
+    const res = await fetch(`${httpUrl}/api/skills`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return null;
+    const rows: { scope: string; title: string; content: string }[] = await res.json();
+    const global = rows.filter(r => r.scope === 'global').map(r => ({ name: r.title, content: r.content }));
+    const roleFiles = rows.filter(r => r.scope === role).map(r => ({ name: r.title, content: r.content }));
+    return { global, role: roleFiles };
+  } catch {
+    return null;
+  }
+}
+
 type PluginConfig = {
   serverUrl?: string;
   agentName?: string;
@@ -44,13 +65,31 @@ export default {
 
     let state: PersistedState = {};
 
+    async function writeSkillsWithFallback(
+      skills: { global: { name: string; content: string }[]; role: { name: string; content: string }[] },
+    ): Promise<void> {
+      const { written } = await writeSkills(skillsDir, skills);
+      if (written > 0 || !state.apiKey) return;
+      log.info('[nexus] No skills from WS, trying REST fallback...');
+      const cfg = resolveConfig();
+      const fallback = await fetchSkillsViaRest(cfg.serverUrl, state.apiKey, cfg.role);
+      if (!fallback) {
+        log.warn('[nexus] REST fallback failed');
+        return;
+      }
+      const { written: fbWritten } = await writeSkills(skillsDir, fallback);
+      if (fbWritten > 0) log.info(`[nexus] REST fallback delivered ${fbWritten} skill(s)`);
+      else log.warn('[nexus] REST fallback also returned no skills — is the skills table empty?');
+    }
+
     // Single shared client — worker runs in separate thread
     const client = new NexusWsClient({
       onMessage(msg: WsMessage) {
         switch (msg.type) {
           case 'auth.ok':
             log.info(`[nexus] Authenticated as ${msg.payload.name} (${msg.payload.role})`);
-            writeSkills(skillsDir, msg.payload.skills).catch(() => {});
+            writeSkillsWithFallback(msg.payload.skills)
+              .catch((err) => log.error(`[nexus] Failed to write skills: ${err}`));
             break;
           case 'auth.fail':
             log.warn(`[nexus] Auth failed: ${msg.payload.reason}`);
@@ -67,13 +106,14 @@ export default {
             state.agentId = msg.payload.agentId;
             saveState().catch(() => {});
             log.info(`[nexus] Approved! Connected as ${msg.payload.name} (${msg.payload.role})`);
-            writeSkills(skillsDir, msg.payload.skills).catch(() => {});
+            writeSkillsWithFallback(msg.payload.skills)
+              .catch((err) => log.error(`[nexus] Failed to write skills: ${err}`));
             break;
           case 'register.rejected':
             log.warn(`[nexus] Registration rejected: ${msg.payload.reason}`);
             break;
           case 'skills.update':
-            writeSkillUpdate(skillsDir, msg.payload.files).catch(() => {});
+            writeSkillUpdate(skillsDir, msg.payload.files).catch((err) => log.error(`[nexus] Failed to write skill update: ${err}`));
             log.info(`[nexus] Skills updated (${msg.payload.scope})`);
             break;
           case 'heartbeat.ack':
